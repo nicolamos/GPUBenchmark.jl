@@ -1,7 +1,7 @@
 # Visual Reporting for GPUBenchmark.jl
 module Visuals
 
-using Term
+using Term: Table, Panel
 using UnicodePlots
 using JSON
 

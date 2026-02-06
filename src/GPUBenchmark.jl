@@ -80,7 +80,9 @@ function parse_commandline(args)
     end
 
     # Parse as symbols and convert to NamedTuple for idiomatic access
-    return NamedTuple(parse_args(args, s, as_symbols=true))
+    parsed = parse_args(args, s, as_symbols=true)
+    isnothing(parsed) && return nothing
+    return NamedTuple(parsed)
 end
 
 function list_benchmarks()
@@ -286,6 +288,7 @@ function (@main)(ARGS)
     
     # 2. Parse initial command line to see what's requested
     parsed_args = parse_commandline(ARGS)
+    isnothing(parsed_args) && return 0
 
     # 3. Load extensions BEFORE building the final task list
     load_extension_dependencies(parsed_args.benchmarks, parsed_args.quiet || parsed_args.show_latest || !isnothing(parsed_args.show))

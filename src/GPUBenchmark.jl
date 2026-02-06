@@ -9,8 +9,6 @@ using InteractiveUtils
 using Statistics
 using Logging
 using LoggingExtras
-using Term
-using UnicodePlots
 
 # --- Registry System ---
 
@@ -104,73 +102,16 @@ function calculate_reasonable_size(fraction=0.4)
     return N
 end
 
-# --- Result Visualization (Terminal Dashboard) ---
+# --- Result Visualization (Terminal Dashboard - Extended via extensions) ---
 
 """
     show_results(path::String)
 
-Render a professional terminal dashboard for a specific benchmark run.
+Stub for terminal dashboard. Overridden by GPUBenchmarkVisualsExt when Term & UnicodePlots are loaded.
 """
 function show_results(path::String)
-    metrics_path = joinpath(path, "metrics.json")
-    if !filemode(metrics_path) == 0 && !isfile(metrics_path)
-        println(Panel("{red}Error: metrics.json not found in $path{/red}", title="Result Viewer"))
-        return
-    end
-
-    results = JSON.parsefile(metrics_path)
-    
-    # 1. Header with Metadata
-    meta = results["metadata"]
-    header_content = """
-    {bold}Node:{/bold}      $(meta["hostname"])
-    {bold}Time:{/bold}      $(results["timestamp"])
-    {bold}CUDA:{/bold}      $(meta["cuda_runtime"]) (Driver: $(meta["cuda_driver"]))
-    """
-    
-    # 2. Benchmark Table
-    bench_data = results["benchmarks"]
-    rows = []
-    
-    if haskey(bench_data, "sysinfo")
-        si = bench_data["sysinfo"]
-        push!(rows, ["Hardware", si["gpu_name"], si["vram_total"]])
-    end
-    
-    if haskey(bench_data, "matmul")
-        m = bench_data["matmul"]
-        push!(rows, ["MatMul (FP32)", "$(round(m["tflops"], digits=2)) TFLOPS", "N=$(m["matrix_size"])"])
-    end
-    
-    if haskey(bench_data, "gpuinspector")
-        gi = bench_data["gpuinspector"]
-        if haskey(gi, "memory_bandwidth")
-            push!(rows, ["Memory BW", "$(round(gi["memory_bandwidth"], digits=2)) GiB/s", "Burn-in"])
-        end
-    end
-
-    tbl = Table(
-        rows,
-        header=["Task", "Performance / Model", "Details"],
-        columns_justify=[:left, :left, :right],
-        columns_width=[15, 30, 15],
-        box=:ROUNDED,
-        style="blue"
-    )
-
-    # 3. Telemetry Visuals (Sparklines)
-    # Note: In a real scenario we'd load telemetry.h5, 
-    # but for simplicity we'll check if averages are in metrics.json 
-    # or just show a status panel.
-    
-    println(Panel(
-        header_content / "" / tbl,
-        title=" {bold blue}GPUBenchmark.jl Summary Report{/bold blue} ",
-        subtitle="{dim}Path: $path{/dim}",
-        style="blue",
-        padding=(2, 2, 1, 1),
-        fit=true
-    ))
+    # If this is called, it means the extension didn't override it.
+    @info "Terminal dashboard skipped (Term/UnicodePlots not loaded or -q passed)."
 end
 
 """
@@ -292,18 +233,28 @@ function cleanup(args...) end
 
 Forcing the loading of packages that trigger Pkg extensions.
 """
-function load_extension_dependencies(to_run)
-    # If "all" is requested, we definitely want the extensions
+function load_extension_dependencies(to_run, quiet=false)
+    # 1. Extensions for stress testing
     needs_gpuinspector = "all" in to_run || "gpuinspector" in to_run
     
     if needs_gpuinspector
         @info "STEP: Loading extension dependencies (GPUInspector, CairoMakie)..."
         try
-            # We must load them in Main to ensure they are visible globally
             Base.eval(Main, :(using GPUInspector))
             Base.eval(Main, :(using CairoMakie))
         catch e
             @warn "Could not load extension dependencies. Parallel stress test will be unavailable." exception=e
+        end
+    end
+
+    # 2. Extensions for visuals
+    if !quiet
+        @info "STEP: Loading visual extension dependencies (Term, UnicodePlots)..."
+        try
+            Base.eval(Main, :(using Term))
+            Base.eval(Main, :(using UnicodePlots))
+        catch e
+            @debug "Visual dependencies not available. Skipping dashboard." exception=e
         end
     end
 end
@@ -318,7 +269,7 @@ function (@main)(ARGS)
     parsed_args = parse_commandline(ARGS)
 
     # 3. Load extensions BEFORE building the final task list
-    load_extension_dependencies(parsed_args["benchmarks"])
+    load_extension_dependencies(parsed_args["benchmarks"], parsed_args["quiet"])
 
     if parsed_args["list"]
         Base.invokelatest(list_benchmarks)
@@ -406,7 +357,7 @@ function (@main)(ARGS)
             # 9. CLI DASHBOARD
             if !parsed_args["quiet"]
                 println("\n")
-                show_results(run_dir)
+                Base.invokelatest(show_results, run_dir)
             end
             
         catch e

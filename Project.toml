@@ -1,0 +1,20 @@
+name = "GPUBenchmark"
+uuid = "a1b2c3d4-e5f6-4a5b-bc6d-7e8f9a0b1c2d"
+version = "0.1.0"
+authors = ["Nicola Mosco"]
+
+[deps]
+ArgParse = "c7e460c6-2fb9-53a9-8c5b-16f535851c63"
+BenchmarkTools = "6e4b80f9-dd63-53aa-95a3-0cdb28fa8baf"
+CUDA = "052768ef-5323-5732-b1bb-66c8b64840ba"
+JSON = "682c06a0-de6a-54ab-a142-c8b1cf79cde6"
+
+[weakdeps]
+CairoMakie = "13f3f980-e62b-5c42-98c6-ff1f3baf88f0"
+GPUInspector = "202e061b-9005-494b-9524-77e77a1074e4"
+
+[extensions]
+GPUInspectorBenchmarkExt = ["GPUInspector", "CairoMakie"]
+
+[apps]
+gpu_benchmark = "GPUBenchmark"

@@ -6,6 +6,7 @@ using ArgParse
 using Dates
 using Printf
 using InteractiveUtils
+using Statistics
 
 # --- Registry System ---
 
@@ -116,7 +117,7 @@ function generate_text_report(results, output_dir)
             dev = CUDA.device()
             println(io, "Active GPU:    $(CUDA.name(dev))")
             println(io, "Compute Cap:   $(CUDA.capability(dev))")
-            println(io, "Total VRAM:    $(Base.format_bytes(CUDA.total_memory(dev)))")
+            println(io, "Total VRAM:    $(Base.format_bytes(CUDA.totalmem(dev)))")
         else
             println(io, "CUDA:          Not Functional")
         end
@@ -147,8 +148,10 @@ function generate_text_report(results, output_dir)
                 mon = r[:_raw_monitoring]
                 # Calculate avg metrics
                 if haskey(mon.results, :power)
-                    avg_p = mean(reduce(vcat, mon.results[:power]))
-                    max_p = maximum(reduce(vcat, mon.results[:power]))
+                    # Average over all devices and samples
+                    all_power = reduce(vcat, mon.results[:power])
+                    avg_p = mean(all_power)
+                    max_p = maximum(all_power)
                     @printf(io, "Avg Power Draw:   %.1f W (Peak: %.1f W)\n", avg_p, max_p)
                 end
                 if haskey(mon.results, :temperature)
@@ -184,7 +187,7 @@ end
 
 Stub for saving plots, implemented in extensions.
 """
-function save_plots(results, output_path)
+function save_plots(args...)
     # Default: do nothing if extension not loaded
     return nothing
 end
@@ -235,7 +238,8 @@ function (@main)(ARGS)
     # Determine which benchmarks to run
     to_run = parsed_args["benchmarks"]
     if "all" in to_run
-        to_run = union(collect(keys(REGISTRY)), ["gpuinspector"]) # Add potential extension benchmarks
+        # Add all registered benchmarks plus extension benchmarks
+        to_run = union(collect(keys(REGISTRY)), ["gpuinspector"])
     end
 
     # Load dependencies for extensions if needed
@@ -253,7 +257,8 @@ function (@main)(ARGS)
         if haskey(REGISTRY, name)
             @info "Running benchmark: $name"
             try
-                results["benchmarks"][name] = REGISTRY[name].run_func(parsed_args)
+                # Use invokelatest to avoid world age issues with discover_benchmarks
+                results["benchmarks"][name] = Base.invokelatest(REGISTRY[name].run_func, parsed_args)
             catch e
                 @error "Benchmark $name failed" exception=e
                 results["benchmarks"][name] = Dict("error" => string(e))
@@ -281,8 +286,8 @@ function (@main)(ARGS)
     generate_text_report(results, run_dir)
 
     # 3. Plots & Telemetry (HDF5/PNG handled by extensions)
-    # We pass the directory, not a specific file
-    save_plots(results, run_dir)
+    # Use invokelatest for the extension-provided method
+    Base.invokelatest(save_plots, results, run_dir)
     
     return 0
 end

@@ -49,6 +49,17 @@ julia --project -m GPUBenchmark --duration 120 --fraction 0.5 gpuinspector
 
 ---
 
+## 📋 Available Benchmark Tasks
+
+| Task | Description | Output |
+| :--- | :--- | :--- |
+| `sysinfo` | Hardware audit: GPU model, VRAM capacity, Compute Capability, PCI IDs. | `summary.txt` |
+| `matmul` | Raw compute test: Performs massive FP32 Matrix Multiplications. | TFLOPS Score |
+| `gpuinspector` | Parallel burn-in: Stress tests **all** GPUs simultaneously with real-time telemetry. | `dashboard.png`, `telemetry.h5` |
+| `all` | Sequentially runs all tasks listed above. | Full Report |
+
+---
+
 ## ⚙️ CLI Reference
 
 | Flag | Long Flag | Description | Default |
@@ -57,6 +68,7 @@ julia --project -m GPUBenchmark --duration 120 --fraction 0.5 gpuinspector
 | `-f` | `--fraction` | Target VRAM usage fraction (0.0 to 1.0) | `0.4` |
 | `-s` | `--size` | Manual matrix size (N). If 0, auto-calculates. | `0` |
 | `-o` | `--output-dir` | Root directory for results | `results` |
+| `-v` | `--verbose` | Enable debug logging (level DEBUG) | - |
 | `-l` | `--list` | List all available benchmark tasks | - |
 
 ---
@@ -69,7 +81,7 @@ Every run creates a timestamped folder: `results/<hostname>/<timestamp>/`
 2. **`dashboard.png`**: A visual chart showing Power, Temperature, and Utilization over time.
 3. **`metrics.json`**: Structured data for automation or CI/CD pipelines (e.g., ARA).
 4. **`telemetry.h5`**: Raw HDF5 time-series data for deep scientific analysis.
-5. **`benchmark.log`**: Complete execution logs and debug information.
+5. **`benchmark.log`**: Complete execution logs. If a task fails, check this for the stacktrace.
 
 ---
 

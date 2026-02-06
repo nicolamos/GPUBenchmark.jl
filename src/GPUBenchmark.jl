@@ -34,8 +34,12 @@ export register_benchmark
 # --- CLI Handling ---
 
 function parse_commandline(args)
-    s = ArgParseSettings(description = "Julia GPU Benchmark Suite - Production Health Check")
-    s.autofix_names = true # Automatically converts dashes to underscores
+    s = ArgParseSettings(
+        description = "Julia GPU Benchmark Suite - Production Health Check",
+        autofix_names = true, # Automatically converts dashes to underscores
+        version = string(pkgversion(@__MODULE__)),
+        add_version = true
+    )
 
     @add_arg_table! s begin
         "--list", "-l"

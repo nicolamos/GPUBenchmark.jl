@@ -80,23 +80,23 @@ function calculate_reasonable_size(fraction=0.4)
     if !CUDA.functional()
         return 2048 # Fallback
     end
-    
+
     # Get free memory in bytes
     free_mem = CUDA.available_memory()
-    
+
     # We need 3 matrices (A, B, C) of Float32 (4 bytes)
     # Total bytes = 3 * N^2 * 4 = 12 * N^2
     # 12 * N^2 = free_mem * fraction
     # N = sqrt( (free_mem * fraction) / 12 )
-    
+
     N = isqrt(Int(floor((free_mem * fraction) / 12)))
-    
+
     # Round down to nearest multiple of 128 for tensor core alignment niceness
     N = div(N, 128) * 128
-    
+
     # Clamp to reasonable bounds
     N = max(2048, N)
-    
+
     @info "Auto-calculated matrix size: $N (targeting $(round(fraction*100))% of $(Base.format_bytes(free_mem)) free VRAM)"
     return N
 end
@@ -133,17 +133,17 @@ function generate_text_report(results, output_dir)
                 println(io, "PCI UUID:      $(si["pci_bus_id"])")
             end
         end
-        
+
         println(io, "")
         println(io, "[Benchmark Results]")
-        
+
         if haskey(results["benchmarks"], "gpuinspector")
             r = results["benchmarks"]["gpuinspector"]
             if haskey(r, "memory_bandwidth")
                 bw = r["memory_bandwidth"]
                 @printf(io, "Memory Bandwidth: %.2f GiB/s\n", bw)
             end
-            
+
             if haskey(r, :_raw_monitoring)
                 mon = r[:_raw_monitoring]
                 # Calculate avg metrics
@@ -232,14 +232,14 @@ end
 
 function (@main)(ARGS)
     discover_benchmarks()
-    
+
     parsed_args = parse_commandline(ARGS)
 
     if parsed_args["list"]
         list_benchmarks()
         return 0
     end
-    
+
     # Auto-calculate size if 0 (default)
     if parsed_args["size"] == 0
         parsed_args["size"] = calculate_reasonable_size(parsed_args["fraction"])
@@ -262,7 +262,7 @@ function (@main)(ARGS)
     results["benchmarks"] = Dict{String, Any}()
 
     @info "Starting GPU Benchmark Suite" benchmarks=to_run size=parsed_args["size"]
-    
+
     for name in to_run
         if haskey(REGISTRY, name)
             @info "Running benchmark: $name"
@@ -283,10 +283,12 @@ function (@main)(ARGS)
     # Create timestamped output directory
     base_dir = parsed_args["output-dir"]
     # Prefer HOSTNAME env var (set by benchmark_env.sh) then system hostname
-    hostname = get(ENV, "HOSTNAME", get(ENV, "COMPUTERNAME", "localhost"))
+    full_hostname = get(ENV, "HOSTNAME", get(ENV, "COMPUTERNAME", "localhost"))
+    # Match Ansible inventory_hostname style (usually base hostname)
+    hostname = split(full_hostname, '.') |> first
     run_dir = joinpath(base_dir, hostname, timestamp)
     mkpath(run_dir)
-    
+
     @info "Saving results to $run_dir"
 
     # 1. JSON (Metadata & High-level metrics)
@@ -294,14 +296,14 @@ function (@main)(ARGS)
     open(json_path, "w") do f
         JSON.print(f, results, 4)
     end
-    
+
     # 2. Text Report
     generate_text_report(results, run_dir)
 
     # 3. Plots & Telemetry (HDF5/PNG handled by extensions)
     # Use invokelatest for the extension-provided method
     Base.invokelatest(save_plots, results, run_dir)
-    
+
     return 0
 end
 

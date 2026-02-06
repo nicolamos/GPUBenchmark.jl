@@ -35,6 +35,11 @@ function GPUBenchmark.show_results(path::String)
         m = bench_data["matmul"]
         push!(rows, ["MatMul (FP32)", "$(round(m["tflops"], digits=2)) TFLOPS", "N=$(m["matrix_size"])"])
     end
+
+    if haskey(bench_data, "tensorcore")
+        t = bench_data["tensorcore"]
+        push!(rows, ["TensorCore", "$(round(t["tflops"], digits=2)) TFLOPS", "Mixed Prec"])
+    end
     
     if haskey(bench_data, "gpuinspector")
         gi = bench_data["gpuinspector"]

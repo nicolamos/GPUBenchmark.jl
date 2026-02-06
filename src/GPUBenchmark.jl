@@ -184,6 +184,13 @@ function generate_text_report(results, output_dir)
             end
         end
 
+        if haskey(results["benchmarks"], "tensorcore")
+            t = results["benchmarks"]["tensorcore"]
+            if !haskey(t, "error")
+                @printf(io, "  Tensor Cores:  %.2f TFLOPS (Mixed Prec)\n", t["tflops"])
+            end
+        end
+
         if haskey(results["benchmarks"], "gpuinspector")
             r = results["benchmarks"]["gpuinspector"]
             if !haskey(r, "error")
@@ -322,6 +329,11 @@ function (@main)(ARGS)
             # Now that extensions are loaded, collect all keys from registry
             # We explicitly include "gpuinspector" if not yet registered but requested
             to_run = union(collect(keys(REGISTRY)), ["gpuinspector"])
+            
+            # Filter out tensorcore if not supported by hardware
+            if CUDA.functional() && capability(CUDA.device()) < v"7.0"
+                to_run = filter(x -> x != "tensorcore", to_run)
+            end
         end
 
         for name in to_run

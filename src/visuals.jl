@@ -54,7 +54,7 @@ function show_results(path::String)
         rows,
         header=["Task", "Performance / Model", "Details"],
         columns_justify=[:left, :left, :right],
-        columns_width=[15, 30, 15],
+        columns_widths=[15, 30, 15],
         box=:ROUNDED,
         style="blue"
     )

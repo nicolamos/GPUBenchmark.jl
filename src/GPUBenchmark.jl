@@ -54,9 +54,9 @@ function parse_commandline(args)
             arg_type = String
             default = "results"
         "benchmarks"
-            help = "Names of benchmarks to run (space separated). Default: all"
+            help = "Names of benchmarks to run (space separated). Default: sysinfo"
             nargs = '*'
-            default = ["all"]
+            default = ["sysinfo"]
     end
 
     return parse_args(args, s)
@@ -120,6 +120,19 @@ function generate_text_report(results, output_dir)
         else
             println(io, "CUDA:          Not Functional")
         end
+        println(io, "")
+        println(io, "[Hardware Capability]")
+        if haskey(results["benchmarks"], "sysinfo")
+            si = results["benchmarks"]["sysinfo"]
+            if haskey(si, "gpu_name")
+                println(io, "GPU Name:      $(si["gpu_name"])")
+                println(io, "Compute Cap:   $(si["compute_capability"])")
+                println(io, "VRAM Total:    $(si["vram_total"])")
+                println(io, "VRAM Free:     $(si["vram_free"])")
+                println(io, "PCI UUID:      $(si["pci_bus_id"])")
+            end
+        end
+        
         println(io, "")
         println(io, "[Benchmark Results]")
         

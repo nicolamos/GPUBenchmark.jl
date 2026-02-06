@@ -27,6 +27,11 @@ Installs a standalone `gpu_benchmark` command.
    pkg> app add https://github.com/nicolamos/GPUBenchmark.jl
    ```
 2. **Configure PATH:** Add `export PATH="$PATH:$HOME/.julia/bin"` to your `~/.bashrc`.
+3. **Update (Maintenance):**
+   ```julia
+   julia> ]
+   pkg> app update GPUBenchmark
+   ```
 
 ### Mode 2: Shared Environment
 Keeps the suite in a versioned Julia environment without a global binary.

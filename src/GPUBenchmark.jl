@@ -125,7 +125,8 @@ Stub for terminal dashboard. Overridden by GPUBenchmarkVisualsExt when Term & Un
 """
 function show_results(path::String)
     # If this is called, it means the extension didn't override it.
-    @info "Terminal dashboard skipped (Term/UnicodePlots not loaded or -q passed)."
+    @info "Dashboard skipped: Visual extensions (Term/UnicodePlots) not loaded or --quiet passed."
+    @info "Tip: Ensure these packages are added to your environment (see README Step 2)."
 end
 
 """
@@ -135,13 +136,16 @@ Convenience helper to show the most recent benchmark run.
 """
 function show_latest(output_dir="results")
     if !isdir(output_dir)
-        @warn "Output directory '$output_dir' does not exist."
+        @warn "Output directory '$output_dir' not found. Use -o/--output-dir to specify the root results directory."
         return
     end
     
     # Find hostname subdirectories
     host_dirs = filter(isdir, [joinpath(output_dir, d) for d in readdir(output_dir)])
-    if isempty(host_dirs) return end
+    if isempty(host_dirs)
+        @warn "No benchmark results found in '$output_dir'."
+        return
+    end
     
     # Find all timestamped runs
     all_runs = String[]
@@ -149,11 +153,14 @@ function show_latest(output_dir="results")
         append!(all_runs, filter(isdir, [joinpath(hdir, d) for d in readdir(hdir)]))
     end
     
-    if isempty(all_runs) return end
+    if isempty(all_runs)
+        @warn "No timestamped benchmark runs found in '$output_dir'."
+        return
+    end
     
     # Sort by folder name (timestamped)
     latest_run = sort(all_runs)[end]
-    show_results(latest_run)
+    Base.invokelatest(show_results, latest_run)
 end
 
 function generate_text_report(results, output_dir)

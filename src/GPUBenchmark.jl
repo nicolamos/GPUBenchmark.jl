@@ -181,48 +181,56 @@ function discover_benchmarks()
     end
 end
 
+# Stubs for extension methods
 function save_plots(args...) end
 function cleanup(args...) end
 
+"""
+    load_extension_dependencies(to_run)
+
+Forcing the loading of packages that trigger Pkg extensions.
+"""
 function load_extension_dependencies(to_run)
-    ext_map = Dict("gpuinspector" => [:GPUInspector, :CairoMakie])
-    for name in to_run
-        if haskey(ext_map, name)
-            for pkg in ext_map[name]
-                @info "STEP: Loading extension dependency..." package=pkg
-                try
-                    Base.eval(Main, :(using $pkg))
-                catch e
-                    @warn "Could not load optional package $pkg. Some features will be disabled."
-                end
-            end
+    # If "all" is requested, we definitely want the extensions
+    needs_gpuinspector = "all" in to_run || "gpuinspector" in to_run
+    
+    if needs_gpuinspector
+        @info "STEP: Loading extension dependencies (GPUInspector, CairoMakie)..."
+        try
+            # We must load them in Main to ensure they are visible globally
+            Base.eval(Main, :(using GPUInspector))
+            Base.eval(Main, :(using CairoMakie))
+        catch e
+            @warn "Could not load extension dependencies. Parallel stress test will be unavailable." exception=e
         end
     end
 end
 
 function (@main)(ARGS)
+    # 1. Discover static benchmarks
     discover_benchmarks()
+    
+    # 2. Parse initial command line to see what's requested
     parsed_args = parse_commandline(ARGS)
 
+    # 3. Load extensions BEFORE building the final task list
+    load_extension_dependencies(parsed_args["benchmarks"])
+
     if parsed_args["list"]
-        list_benchmarks()
+        Base.invokelatest(list_benchmarks)
         return 0
     end
     
-    # 1. SETUP OUTPUT
+    # 4. SETUP OUTPUT
     timestamp = Dates.format(now(), "yyyy-mm-dd_HHMMSS")
     full_hostname = get(ENV, "HOSTNAME", get(ENV, "COMPUTERNAME", "localhost"))
     hostname = split(full_hostname, '.') |> first
     run_dir = joinpath(parsed_args["output-dir"], hostname, timestamp)
     mkpath(run_dir)
 
-    # 2. CONFIGURE LOGGING
+    # 5. CONFIGURE LOGGING
     log_file = joinpath(run_dir, "benchmark.log")
-    
-    # Standard log level is Info, but we switch to Debug if --verbose is used
     min_level = parsed_args["verbose"] ? Logging.Debug : Logging.Info
-    
-    # We wrap the TeeLogger in a MinLevelLogger to globally control verbosity
     tee_logger = MinLevelLogger(
         TeeLogger(
             ConsoleLogger(stdout),
@@ -238,11 +246,10 @@ function (@main)(ARGS)
         @info "  - Artifacts: $run_dir"
         println("-"^60)
 
-        # 3. PRE-FLIGHT
+        # 6. PRE-FLIGHT
         if parsed_args["size"] == 0
             parsed_args["size"] = calculate_reasonable_size(parsed_args["fraction"])
         end
-        load_extension_dependencies(parsed_args["benchmarks"])
 
         results = Dict{String, Any}()
         results["timestamp"] = timestamp
@@ -254,14 +261,17 @@ function (@main)(ARGS)
         )
         results["benchmarks"] = Dict{String, Any}()
 
-        # 4. EXECUTION
+        # 7. EXECUTION
         to_run = parsed_args["benchmarks"]
         if "all" in to_run
+            # Now that extensions are loaded, collect all keys from registry
+            # We explicitly include "gpuinspector" if not yet registered but requested
             to_run = union(collect(keys(REGISTRY)), ["gpuinspector"])
         end
 
         for name in to_run
-            if haskey(REGISTRY, name)
+            # Use invokelatest to ensure we see tasks registered by extensions in this world age
+            if Base.invokelatest(haskey, REGISTRY, name)
                 @info "STEP: Running task '$name'..."
                 try
                     results["benchmarks"][name] = Base.invokelatest(REGISTRY[name].run_func, parsed_args)
@@ -279,12 +289,13 @@ function (@main)(ARGS)
             end
         end
 
-        # 5. POST-FLIGHT
+        # 8. POST-FLIGHT
         @info "STEP: Finalizing reports..."
         try
             Base.invokelatest(cleanup)
             open(joinpath(run_dir, "metrics.json"), "w") do f JSON.print(f, results, 4) end
             generate_text_report(results, run_dir)
+            # Extension-provided method
             Base.invokelatest(save_plots, results, run_dir)
             @info "✅ All reports saved successfully."
         catch e

@@ -30,4 +30,5 @@ Logging = "1.11.0"
 Term = "2.0.8"
 UnicodePlots = "3.8.1"
 
-[apps.gpu_benchmark]
+[apps]
+gpu_benchmark = {}

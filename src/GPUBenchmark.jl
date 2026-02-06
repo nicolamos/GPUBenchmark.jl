@@ -139,16 +139,15 @@ function generate_text_report(results, output_dir)
 
         if haskey(results["benchmarks"], "gpuinspector")
             r = results["benchmarks"]["gpuinspector"]
-            if haskey(r, "memory_bandwidth")
-                bw = r["memory_bandwidth"]
-                @printf(io, "Memory Bandwidth: %.2f GiB/s\n", bw)
-            end
-
-            if haskey(r, :_raw_monitoring)
-                mon = r[:_raw_monitoring]
-                # Calculate avg metrics
-                if haskey(mon.results, :power)
-                    # Average over all devices and samples
+                        if haskey(r, "memory_bandwidth")
+                            bw = r["memory_bandwidth"]
+                            @printf(io, "Memory Bandwidth: %.2f GiB/s\n", bw)
+                        end
+            
+                        if haskey(r, "_raw_monitoring")
+                            mon = r["_raw_monitoring"]
+                            # Calculate avg metrics
+                            if haskey(mon.results, :power)                    # Average over all devices and samples
                     all_power = reduce(vcat, mon.results[:power])
                     avg_p = mean(all_power)
                     max_p = maximum(all_power)

@@ -47,7 +47,7 @@ function run_gpuinspector(args)
     )
     
     # Attach raw object for save_plots
-    results[:_raw_monitoring] = mon_results
+    results["_raw_monitoring"] = mon_results
     
     return results
 end
@@ -55,8 +55,8 @@ end
 function GPUBenchmark.save_plots(results, output_path)
     if haskey(results["benchmarks"], "gpuinspector")
         g_res = results["benchmarks"]["gpuinspector"]
-        if haskey(g_res, :_raw_monitoring)
-            mon_results = g_res[:_raw_monitoring]
+        if haskey(g_res, "_raw_monitoring")
+            mon_results = g_res["_raw_monitoring"]
             
             # Save raw HDF5 telemetry
             h5_file = joinpath(output_path, "telemetry.h5")

@@ -17,4 +17,4 @@ GPUInspector = "202e061b-9005-494b-9524-77e77a1074e4"
 GPUInspectorBenchmarkExt = ["GPUInspector", "CairoMakie"]
 
 [apps]
-gpu_benchmark = "GPUBenchmark"
+gpu_benchmark = {}

@@ -50,14 +50,14 @@ Keeps the suite in a versioned Julia environment without a global binary.
 By default, the tool is lightweight and only performs core tests. To enable the **Dashboard** (`Term.jl`) and **Parallel Burn-in** (`GPUInspector.jl`), you must add the feature extensions.
 
 ### For Global CLI Tool (Mode 1)
-Run this command to add visuals and stress testing capabilities to the app environment:
+Run this command to add stress testing capabilities to the app environment (visuals are now included by default):
 ```bash
-julia --project=$HOME/.julia/apps/GPUBenchmark -e 'using Pkg; Pkg.add(["Term", "UnicodePlots", "GPUInspector", "CairoMakie"])'
+julia --project=$HOME/.julia/apps/GPUBenchmark -e 'using Pkg; Pkg.add(["GPUInspector", "CairoMakie"])'
 ```
 
 ### For Shared Environment (Mode 2)
 ```julia
-(gpu-test) pkg> add Term UnicodePlots GPUInspector CairoMakie
+(gpu-test) pkg> add GPUInspector CairoMakie
 ```
 
 ---

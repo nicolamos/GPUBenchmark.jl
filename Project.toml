@@ -14,12 +14,12 @@ Logging = "56ddb016-857b-54e1-b83d-db4d58db5568"
 LoggingExtras = "e6f89c97-d47a-5376-807f-9c37f3926c36"
 Printf = "de0858da-6303-5e67-8744-51eddeeeb8d7"
 Statistics = "10745b16-79ce-11e8-11f9-7d13ad32a3b2"
+Term = "22787eb5-b846-44ae-b979-8e399b8463ab"
+UnicodePlots = "b8865327-cd53-5732-bb35-84acbb429228"
 
 [weakdeps]
 CairoMakie = "13f3f980-e62b-5c42-98c6-ff1f3baf88f0"
 GPUInspector = "608d808f-ff79-47b0-a25d-21f2c9b42853"
-Term = "22787eb5-b846-44ae-b979-8e399b8463ab"
-UnicodePlots = "b8865327-cd53-5732-bb35-84acbb429228"
 
 [extensions]
 GPUBenchmarkVisualsExt = ["Term", "UnicodePlots"]

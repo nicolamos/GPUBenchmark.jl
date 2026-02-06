@@ -56,6 +56,9 @@ function parse_commandline(args)
             help = "Root directory for results."
             arg_type = String
             default = "results"
+        "--verbose", "-v"
+            help = "Enable debug logging."
+            action = :store_true
         "benchmarks"
             help = "Tasks: sysinfo (default), matmul, gpuinspector, all."
             nargs = '*'
@@ -215,9 +218,17 @@ function (@main)(ARGS)
 
     # 2. CONFIGURE LOGGING
     log_file = joinpath(run_dir, "benchmark.log")
-    tee_logger = TeeLogger(
-        ConsoleLogger(stdout),
-        SimpleLogger(open(log_file, "w"))
+    
+    # Standard log level is Info, but we switch to Debug if --verbose is used
+    min_level = parsed_args["verbose"] ? Logging.Debug : Logging.Info
+    
+    # We wrap the TeeLogger in a MinLevelLogger to globally control verbosity
+    tee_logger = MinLevelLogger(
+        TeeLogger(
+            ConsoleLogger(stdout),
+            SimpleLogger(open(log_file, "w"))
+        ),
+        min_level
     )
 
     with_logger(tee_logger) do

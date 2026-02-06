@@ -23,7 +23,14 @@ function run_matmul(args)
     CUDA.@sync A * B
     
     # Benchmark
-    t = @elapsed CUDA.@sync A * B
+    t = @elapsed CUDA.@sync begin
+        C = A * B
+        CUDA.unsafe_free!(C)
+    end
+    
+    # Explicitly free input matrices
+    CUDA.unsafe_free!(A)
+    CUDA.unsafe_free!(B)
     
     results["time_s"] = t
     results["tflops"] = (2.0 * n^3) / t / 1e12

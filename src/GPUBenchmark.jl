@@ -280,30 +280,32 @@ function (@main)(ARGS)
         end
     end
 
-    # Create timestamped output directory
-    base_dir = parsed_args["output-dir"]
-    # Prefer HOSTNAME env var (set by benchmark_env.sh) then system hostname
-    full_hostname = get(ENV, "HOSTNAME", get(ENV, "COMPUTERNAME", "localhost"))
-    # Match Ansible inventory_hostname style (usually base hostname)
-    hostname = split(full_hostname, '.') |> first
-    run_dir = joinpath(base_dir, hostname, timestamp)
-    mkpath(run_dir)
-
-    @info "Saving results to $run_dir"
-
-    # 1. JSON (Metadata & High-level metrics)
-    json_path = joinpath(run_dir, "metrics.json")
-    open(json_path, "w") do f
-        JSON.print(f, results, 4)
-    end
-
-    # 2. Text Report
-    generate_text_report(results, run_dir)
-
-    # 3. Plots & Telemetry (HDF5/PNG handled by extensions)
-    # Use invokelatest for the extension-provided method
-    Base.invokelatest(save_plots, results, run_dir)
-
+        # Create timestamped output directory
+        base_dir = parsed_args["output-dir"]
+        # Prefer HOSTNAME env var (set by benchmark_env.sh) then system hostname
+        full_hostname = get(ENV, "HOSTNAME", get(ENV, "COMPUTERNAME", "localhost"))
+        # Match Ansible inventory_hostname style (usually base hostname)
+        hostname = split(full_hostname, '.') |> first
+        run_dir = joinpath(base_dir, hostname, timestamp)
+        mkpath(run_dir)
+    
+        @info "Benchmarking complete. Cleaning up and saving results to $run_dir"
+        
+        # 1. Cleanup memory before heavy plotting/IO
+        Base.invokelatest(cleanup)
+    
+        # 2. JSON (Metadata & High-level metrics)
+        json_path = joinpath(run_dir, "metrics.json")
+        open(json_path, "w") do f
+            JSON.print(f, results, 4)
+        end
+        
+        # 3. Text Report
+        generate_text_report(results, run_dir)
+    
+        # 4. Plots & Telemetry (HDF5/PNG handled by extensions)
+        # Use invokelatest for the extension-provided method
+        Base.invokelatest(save_plots, results, run_dir)
     return 0
 end
 

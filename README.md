@@ -128,7 +128,8 @@ GPUBenchmark.show_results("results/my-node/2026-02-06_120000")
 | `-o` | `--output-dir` | Root directory for results | `results` |
 | `-v` | `--verbose` | Enable debug logging (level DEBUG) | - |
 | `-q` | `--quiet` | Suppress terminal dashboard (Batch mode) | - |
-| `-S` | `--show` | Show results of the latest run and exit | - |
+|      | `--show-latest` | Show dashboard for the latest run found | - |
+| `-S` | `--show` | Show dashboard for a specific run path | - |
 | `-l` | `--list` | List all available benchmark tasks | - |
 
 ---

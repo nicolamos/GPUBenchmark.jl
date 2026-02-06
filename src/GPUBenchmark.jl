@@ -35,6 +35,7 @@ export register_benchmark
 
 function parse_commandline(args)
     s = ArgParseSettings(description = "Julia GPU Benchmark Suite - Production Health Check")
+    s.autofix_names = true # Automatically converts dashes to underscores
 
     @add_arg_table! s begin
         "--list", "-l"
@@ -74,7 +75,8 @@ function parse_commandline(args)
             default = ["sysinfo"]
     end
 
-    return parse_args(args, s)
+    # Parse as symbols and convert to NamedTuple for idiomatic access
+    return NamedTuple(parse_args(args, s, as_symbols=true))
 end
 
 function list_benchmarks()
@@ -282,20 +284,20 @@ function (@main)(ARGS)
     parsed_args = parse_commandline(ARGS)
 
     # 3. Load extensions BEFORE building the final task list
-    load_extension_dependencies(parsed_args["benchmarks"], parsed_args["quiet"] || parsed_args["show_latest"] || !isnothing(parsed_args["show"]))
+    load_extension_dependencies(parsed_args.benchmarks, parsed_args.quiet || parsed_args.show_latest || !isnothing(parsed_args.show))
 
-    if parsed_args["list"]
+    if parsed_args.list
         Base.invokelatest(list_benchmarks)
         return 0
     end
 
-    if parsed_args["show_latest"]
-        Base.invokelatest(show_latest, parsed_args["output-dir"])
+    if parsed_args.show_latest
+        Base.invokelatest(show_latest, parsed_args.output_dir)
         return 0
     end
 
-    if !isnothing(parsed_args["show"])
-        Base.invokelatest(show_results, parsed_args["show"])
+    if !isnothing(parsed_args.show)
+        Base.invokelatest(show_results, parsed_args.show)
         return 0
     end
     
@@ -303,12 +305,12 @@ function (@main)(ARGS)
     timestamp = Dates.format(now(), "yyyy-mm-dd_HHMMSS")
     full_hostname = get(ENV, "HOSTNAME", get(ENV, "COMPUTERNAME", "localhost"))
     hostname = split(full_hostname, '.') |> first
-    run_dir = joinpath(parsed_args["output-dir"], hostname, timestamp)
+    run_dir = joinpath(parsed_args.output_dir, hostname, timestamp)
     mkpath(run_dir)
 
     # 5. CONFIGURE LOGGING
     log_file = joinpath(run_dir, "benchmark.log")
-    min_level = parsed_args["verbose"] ? Logging.Debug : Logging.Info
+    min_level = parsed_args.verbose ? Logging.Debug : Logging.Info
     tee_logger = MinLevelLogger(
         TeeLogger(
             ConsoleLogger(stdout),
@@ -325,8 +327,9 @@ function (@main)(ARGS)
         println("-"^60)
 
         # 6. PRE-FLIGHT
-        if parsed_args["size"] == 0
-            parsed_args["size"] = calculate_reasonable_size(parsed_args["fraction"])
+        size = parsed_args.size
+        if size == 0
+            size = calculate_reasonable_size(parsed_args.fraction)
         end
 
         results = Dict{String, Any}()
@@ -340,7 +343,7 @@ function (@main)(ARGS)
         results["benchmarks"] = Dict{String, Any}()
 
         # 7. EXECUTION
-        to_run = parsed_args["benchmarks"]
+        to_run = parsed_args.benchmarks
         if "all" in to_run
             # Now that extensions are loaded, collect all keys from registry
             # We explicitly include "gpuinspector" if not yet registered but requested
@@ -357,7 +360,11 @@ function (@main)(ARGS)
             if Base.invokelatest(haskey, REGISTRY, name)
                 @info "STEP: Running task '$name'..."
                 try
-                    results["benchmarks"][name] = Base.invokelatest(REGISTRY[name].run_func, parsed_args)
+                    # Pass a dictionary for the benchmark tasks to maintain compatibility
+                    task_args = Dict(pairs(parsed_args))
+                    task_args[:size] = size 
+                    
+                    results["benchmarks"][name] = Base.invokelatest(REGISTRY[name].run_func, task_args)
                     # Inline Summary
                     if name == "matmul" && !haskey(results["benchmarks"][name], "error")
                         @info "  - Result: $(round(results["benchmarks"][name]["tflops"], digits=2)) TFLOPS"
@@ -383,7 +390,7 @@ function (@main)(ARGS)
             @info "✅ All reports saved successfully."
             
             # 9. CLI DASHBOARD
-            if !parsed_args["quiet"]
+            if !parsed_args.quiet
                 println("\n")
                 Base.invokelatest(show_results, run_dir)
             end

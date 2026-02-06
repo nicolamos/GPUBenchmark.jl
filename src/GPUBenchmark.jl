@@ -291,7 +291,8 @@ function (@main)(ARGS)
     isnothing(parsed_args) && return 0
 
     # 3. Load extensions BEFORE building the final task list
-    load_extension_dependencies(parsed_args.benchmarks, parsed_args.quiet || parsed_args.show_latest || !isnothing(parsed_args.show))
+    # Only skip visual loading if explicit 'quiet' is passed.
+    load_extension_dependencies(parsed_args.benchmarks, parsed_args.quiet)
 
     if parsed_args.list
         Base.invokelatest(list_benchmarks)

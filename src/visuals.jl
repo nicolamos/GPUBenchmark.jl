@@ -1,11 +1,13 @@
-module GPUBenchmarkVisualsExt
+# Visual Reporting for GPUBenchmark.jl
+module Visuals
 
-using GPUBenchmark
 using Term
 using UnicodePlots
 using JSON
 
-function GPUBenchmark.show_results(path::String)
+export show_results
+
+function show_results(path::String)
     metrics_path = joinpath(path, "metrics.json")
     if !isfile(metrics_path)
         println(Panel("{red}Error: metrics.json not found in $path{/red}", title="Result Viewer"))
@@ -57,8 +59,7 @@ function GPUBenchmark.show_results(path::String)
         style="blue"
     )
 
-    # 3. Telemetry Visuals (Sparklines)
-    # Note: We keep this simple for now using a Panel
+    # 3. Telemetry Visuals (Future: Sparklines with UnicodePlots)
     
     println(Panel(
         header_content / "" / tbl,
@@ -70,4 +71,4 @@ function GPUBenchmark.show_results(path::String)
     ))
 end
 
-end # module
+end # module Visuals

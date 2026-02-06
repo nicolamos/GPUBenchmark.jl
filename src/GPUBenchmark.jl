@@ -116,18 +116,8 @@ function calculate_reasonable_size(fraction=0.4)
     return N
 end
 
-# --- Result Visualization (Terminal Dashboard - Extended via extensions) ---
-
-"""
-    show_results(path::String)
-
-Stub for terminal dashboard. Overridden by GPUBenchmarkVisualsExt when Term & UnicodePlots are loaded.
-"""
-function show_results(path::String)
-    # If this is called, it means the extension didn't override it.
-    @info "Dashboard skipped: Visual extensions (Term/UnicodePlots) not loaded or --quiet passed."
-    @info "Tip: Ensure these packages are added to your environment (see README Step 2)."
-end
+include("visuals.jl")
+using .Visuals
 
 """
     show_latest(output_dir="results")
@@ -276,15 +266,7 @@ function load_extension_dependencies(to_run, quiet=false)
     end
 
     # 2. Extensions for visuals
-    if !quiet
-        @info "STEP: Loading visual extension dependencies (Term, UnicodePlots)..."
-        try
-            Base.eval(Main, :(using Term))
-            Base.eval(Main, :(using UnicodePlots))
-        catch e
-            @debug "Visual dependencies not available. Skipping dashboard." exception=e
-        end
-    end
+    # (Term and UnicodePlots are now core dependencies handled by the Visuals submodule)
 end
 
 # --- Entry Points ---
@@ -312,7 +294,7 @@ function (@main)(ARGS)
     end
 
     if !isnothing(parsed_args.show)
-        Base.invokelatest(show_results, parsed_args.show)
+        Base.invokelatest(Visuals.show_results, parsed_args.show)
         return 0
     end
     
@@ -407,7 +389,7 @@ function (@main)(ARGS)
             # 9. CLI DASHBOARD
             if !parsed_args.quiet
                 println("\n")
-                Base.invokelatest(show_results, run_dir)
+                Base.invokelatest(Visuals.show_results, run_dir)
             end
             
         catch e

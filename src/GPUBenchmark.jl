@@ -9,6 +9,8 @@ using InteractiveUtils
 using Statistics
 using Logging
 using LoggingExtras
+using Term
+using UnicodePlots
 
 # --- Registry System ---
 
@@ -59,6 +61,9 @@ function parse_commandline(args)
         "--verbose", "-v"
             help = "Enable debug logging."
             action = :store_true
+        "--quiet", "-q"
+            help = "Suppress terminal dashboard (useful for batch/ansible)."
+            action = :store_true
         "benchmarks"
             help = "Tasks: sysinfo (default), matmul, gpuinspector, all."
             nargs = '*'
@@ -97,6 +102,103 @@ function calculate_reasonable_size(fraction=0.4)
     @info "  - Result:    N = $N"
     
     return N
+end
+
+# --- Result Visualization (Terminal Dashboard) ---
+
+"""
+    show_results(path::String)
+
+Render a professional terminal dashboard for a specific benchmark run.
+"""
+function show_results(path::String)
+    metrics_path = joinpath(path, "metrics.json")
+    if !filemode(metrics_path) == 0 && !isfile(metrics_path)
+        println(Panel("{red}Error: metrics.json not found in $path{/red}", title="Result Viewer"))
+        return
+    end
+
+    results = JSON.parsefile(metrics_path)
+    
+    # 1. Header with Metadata
+    meta = results["metadata"]
+    header_content = """
+    {bold}Node:{/bold}      $(meta["hostname"])
+    {bold}Time:{/bold}      $(results["timestamp"])
+    {bold}CUDA:{/bold}      $(meta["cuda_runtime"]) (Driver: $(meta["cuda_driver"]))
+    """
+    
+    # 2. Benchmark Table
+    bench_data = results["benchmarks"]
+    rows = []
+    
+    if haskey(bench_data, "sysinfo")
+        si = bench_data["sysinfo"]
+        push!(rows, ["Hardware", si["gpu_name"], si["vram_total"]])
+    end
+    
+    if haskey(bench_data, "matmul")
+        m = bench_data["matmul"]
+        push!(rows, ["MatMul (FP32)", "$(round(m["tflops"], digits=2)) TFLOPS", "N=$(m["matrix_size"])"])
+    end
+    
+    if haskey(bench_data, "gpuinspector")
+        gi = bench_data["gpuinspector"]
+        if haskey(gi, "memory_bandwidth")
+            push!(rows, ["Memory BW", "$(round(gi["memory_bandwidth"], digits=2)) GiB/s", "Burn-in"])
+        end
+    end
+
+    tbl = Table(
+        rows,
+        header=["Task", "Performance / Model", "Details"],
+        columns_justify=[:left, :left, :right],
+        columns_width=[15, 30, 15],
+        box=:ROUNDED,
+        style="blue"
+    )
+
+    # 3. Telemetry Visuals (Sparklines)
+    # Note: In a real scenario we'd load telemetry.h5, 
+    # but for simplicity we'll check if averages are in metrics.json 
+    # or just show a status panel.
+    
+    println(Panel(
+        header_content / "" / tbl,
+        title=" {bold blue}GPUBenchmark.jl Summary Report{/bold blue} ",
+        subtitle="{dim}Path: $path{/dim}",
+        style="blue",
+        padding=(2, 2, 1, 1),
+        fit=true
+    ))
+end
+
+"""
+    show_latest(output_dir="results")
+
+Convenience helper to show the most recent benchmark run.
+"""
+function show_latest(output_dir="results")
+    if !isdir(output_dir)
+        @warn "Output directory '$output_dir' does not exist."
+        return
+    end
+    
+    # Find hostname subdirectories
+    host_dirs = filter(isdir, [joinpath(output_dir, d) for d in readdir(output_dir)])
+    if isempty(host_dirs) return end
+    
+    # Find all timestamped runs
+    all_runs = String[]
+    for hdir in host_dirs
+        append!(all_runs, filter(isdir, [joinpath(hdir, d) for d in readdir(hdir)]))
+    end
+    
+    if isempty(all_runs) return end
+    
+    # Sort by folder name (timestamped)
+    latest_run = sort(all_runs)[end]
+    show_results(latest_run)
 end
 
 function generate_text_report(results, output_dir)
@@ -206,6 +308,8 @@ function load_extension_dependencies(to_run)
     end
 end
 
+# --- Entry Points ---
+
 function (@main)(ARGS)
     # 1. Discover static benchmarks
     discover_benchmarks()
@@ -298,6 +402,13 @@ function (@main)(ARGS)
             # Extension-provided method
             Base.invokelatest(save_plots, results, run_dir)
             @info "✅ All reports saved successfully."
+            
+            # 9. CLI DASHBOARD
+            if !parsed_args["quiet"]
+                println("\n")
+                show_results(run_dir)
+            end
+            
         catch e
             @error "Failed to save final reports" exception=e
         end
@@ -307,6 +418,11 @@ function (@main)(ARGS)
     end
 
     return 0
+end
+
+# Backward compatibility for julia -m GPUBenchmark
+function main()
+    (@main)(ARGS)
 end
 
 end # module

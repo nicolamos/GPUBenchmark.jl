@@ -6,91 +6,109 @@ This tool is used to verify that a freshly provisioned GPU node is stable under 
 
 ---
 
-## 🛠 Manual Installation (Standalone)
+## ⚠️ Prerequisites & Caveats
 
-If you are not using the Ansible provisioning role and want to run this manually:
+- **Hardware:** Optimized for **NVIDIA GPUs** (Compute Capability 6.0+).
+- **OS:** Linux (x86_64) is the primary target for HPC validation.
+- **CUDA:** The package includes `CUDA.jl` and uses Julia-managed artifacts by default. For production-grade validation, using the **local system toolkit** is recommended (see Advanced Usage).
+- **Core vs. Extended Features:** 
+    - **Core:** Hardware audit (`sysinfo`) and raw compute (`matmul`). Zero extra dependencies.
+    - **Extended:** Parallel burn-in and real-time telemetry (`gpuinspector`). Requires manual installation of optional extensions (see Setup).
 
-1. **Clone the repository:**
-   ```bash
-   git clone https://github.com/nicolamos/GPUBenchmark.jl.git
-   cd GPUBenchmark.jl
+---
+
+## 💿 Deployment Options
+
+Choose the installation mode that fits your operational requirements.
+
+### Mode 1: Global CLI Tool (Recommended 🌟)
+Installs a standalone `gpu_benchmark` command. Best for dedicated validation nodes.
+
+1. **Install the App:**
+   ```julia
+   julia> ]
+   pkg> app add https://github.com/nicolamos/GPUBenchmark.jl
    ```
 
-2. **Initialize the Environment:**
-   This will download all dependencies (CUDA, GPUInspector, CairoMakie) and solve the environment for your specific hardware.
-   ```bash
-   julia --project -e 'using Pkg; Pkg.instantiate(); Pkg.precompile()'
+2. **Configure PATH:** Add `export PATH="$PATH:$HOME/.julia/bin"` to your `~/.bashrc`.
+3. **Run:** `gpu_benchmark all`
+
+### Mode 2: Shared Environment (Portable)
+Keeps the benchmark suite in a versioned Julia environment without a global binary. Ideal for multi-user systems.
+
+1. **Activate shared environment:**
+   ```julia
+   julia> ]
+   pkg> activate --shared gpu-test
    ```
+
+2. **Add package:** `(gpu-test) pkg> add https://github.com/nicolamos/GPUBenchmark.jl`
+3. **Run:** `julia --project=@gpu-test -m GPUBenchmark all`
 
 ---
 
 ## 📊 Usage Guide
 
-The tool uses a task-based system. Running without arguments will perform a quick system check.
+The tool uses a task-based system. Running without arguments performs a quick hardware audit.
 
-### 1. Quick Hardware Report (Default)
-Check if GPUs are detected and show their basic capabilities.
+### Execution Examples
 ```bash
-julia --project -m GPUBenchmark
-```
+# Basic usage (Global App)
+gpu_benchmark all
 
-### 2. Full System Validation
-Runs the hardware report, a raw TFLOPS benchmark, and a parallel monitored stress test on all GPUs.
-```bash
-julia --project -m GPUBenchmark all
-```
+# Advanced tuning via the '--' delimiter
+# (Flags before '--' are for Julia, flags after are for the benchmark)
+gpu_benchmark --threads=auto -- --duration 60 all
 
-### 3. Tuning the Stress Test
-You can control the intensity and duration of the burn-in:
-```bash
-# Run for 2 minutes using 50% of available VRAM
-julia --project -m GPUBenchmark --duration 120 --fraction 0.5 gpuinspector
+# Headless mode (No terminal dashboard)
+# Ideal for CI/CD, Cron, or Batch jobs (Slurm/PBS)
+gpu_benchmark -- --quiet all
 ```
 
 ---
 
 ## 📋 Available Benchmark Tasks
 
-| Task | Description | Output |
+| Task | Level | Description |
 | :--- | :--- | :--- |
-| `sysinfo` | Hardware audit: GPU model, VRAM capacity, Compute Capability, PCI IDs. | `summary.txt` |
-| `matmul` | Raw compute test: Performs massive FP32 Matrix Multiplications. | TFLOPS Score |
-| `gpuinspector` | Parallel burn-in: Stress tests **all** GPUs simultaneously with real-time telemetry. | `dashboard.png`, `telemetry.h5` |
-| `all` | Sequentially runs all tasks listed above. | Full Report |
-
----
-
-## ⚙️ CLI Reference
-
-| Flag | Long Flag | Description | Default |
-| :--- | :--- | :--- | :--- |
-| `-d` | `--duration` | Stress test duration in seconds | `30` |
-| `-f` | `--fraction` | Target VRAM usage fraction (0.0 to 1.0) | `0.4` |
-| `-s` | `--size` | Manual matrix size (N). If 0, auto-calculates. | `0` |
-| `-o` | `--output-dir` | Root directory for results | `results` |
-| `-v` | `--verbose` | Enable debug logging (level DEBUG) | - |
-| `-l` | `--list` | List all available benchmark tasks | - |
+| `sysinfo` | **Core** | Hardware audit: GPU model, VRAM, PCI IDs. |
+| `matmul` | **Core** | Raw compute: Peak FP32 TFLOPS via massive matrix ops. |
+| `gpuinspector`| **Ext** | **Burn-in:** Parallel stress test with telemetry. |
+| `all` | - | Runs all available tasks sequentially. |
 
 ---
 
 ## 📂 Understanding the Results
 
-Every run creates a timestamped folder: `results/<hostname>/<timestamp>/`
+Results are saved to `results/<hostname>/<timestamp>/`.
 
-1. **`summary.txt`**: The "Health Certificate". A human-readable report of system info and performance scores.
-2. **`dashboard.png`**: A visual chart showing Power, Temperature, and Utilization over time.
-3. **`metrics.json`**: Structured data for automation or CI/CD pipelines (e.g., ARA).
-4. **`telemetry.h5`**: Raw HDF5 time-series data for deep scientific analysis.
-5. **`benchmark.log`**: Complete execution logs. If a task fails, check this for the stacktrace.
+### 1. Core Artifacts (Always generated)
+- **`summary.txt`**: The "Health Certificate". Human-readable report of specs and scores.
+- **`metrics.json`**: Structured data for CI/CD pipelines or database ingestion.
+- **`benchmark.log`**: Detailed execution traces and hardware events.
+
+### 2. Extended Artifacts (Requires `GPUInspector` & `CairoMakie`)
+- **`dashboard.png`**: Visual chart of Power, Temp, and Utilization during the burn-in.
+- **`telemetry.h5`**: High-frequency raw sensor data for scientific analysis.
 
 ---
 
-## 🏗 Developer Notes
+## 🚀 Advanced Usage & Extensions
 
-To add a new benchmark task, create a file in `src/benchmarks/` and use the `register_benchmark` function:
+### Enabling the Full Burn-in Suite
+For meaningful stability testing, the `gpuinspector` extension is highly recommended. It provides the parallel load necessary to verify cooling and power delivery.
 
+**Trade-offs:** Adding these will increase disk usage (~300MB) and precompilation time.
 ```julia
-register_benchmark("my_test", "Description of test", run_my_test_function)
+# In your chosen environment (e.g. @gpu-test):
+pkg> add GPUInspector CairoMakie
+```
+
+### Performance Tuning: System CUDA
+To benchmark against the specific CUDA version installed on your host OS:
+```julia
+using CUDA
+CUDA.set_runtime_version!(v"12.4", local_toolkit=true)
 ```
 
 ## ⚖️ License

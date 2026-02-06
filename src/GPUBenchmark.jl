@@ -282,7 +282,8 @@ function (@main)(ARGS)
 
     # Create timestamped output directory
     base_dir = parsed_args["output-dir"]
-    hostname = get(ENV, "HOSTNAME", "localhost")
+    # Prefer HOSTNAME env var (set by benchmark_env.sh) then system hostname
+    hostname = get(ENV, "HOSTNAME", get(ENV, "COMPUTERNAME", "localhost"))
     run_dir = joinpath(base_dir, hostname, timestamp)
     mkpath(run_dir)
     

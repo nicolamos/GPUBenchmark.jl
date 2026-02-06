@@ -79,6 +79,16 @@ function GPUBenchmark.save_plots(results, output_path)
     end
 end
 
+function GPUBenchmark.cleanup()
+    @info "Cleaning up GPU memory..."
+    try
+        # Use GPUInspector's multi-GPU memory clearing (calls CUDA.reclaim internally)
+        clear_all_gpus_memory()
+    catch e
+        @warn "Cleanup encountered an issue" exception=e
+    end
+end
+
 function __init__()
     GPUBenchmark.register_benchmark(
         "gpuinspector",

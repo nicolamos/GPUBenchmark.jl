@@ -193,6 +193,16 @@ function save_plots(args...)
 end
 
 """
+    cleanup()
+
+Stub for memory cleanup, implemented in extensions.
+"""
+function cleanup(args...)
+    # Default: do nothing
+    return nothing
+end
+
+"""
     load_extension_dependencies(to_run)
 
 Try to load packages that trigger Pkg extensions for specific benchmarks.
@@ -259,6 +269,8 @@ function (@main)(ARGS)
             try
                 # Use invokelatest to avoid world age issues with discover_benchmarks
                 results["benchmarks"][name] = Base.invokelatest(REGISTRY[name].run_func, parsed_args)
+                # Cleanup memory after each benchmark
+                Base.invokelatest(cleanup)
             catch e
                 @error "Benchmark $name failed" exception=e
                 results["benchmarks"][name] = Dict("error" => string(e))

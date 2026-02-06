@@ -19,9 +19,9 @@ function run_gpuinspector(args)
     results["memory_bandwidth"] = memory_bandwidth()
     
     # 2. Stress Test with Monitoring
-    @info "Running 30s Stress Test with monitoring (size=$(args["size"]))..."
+    @info "Running $(args["duration"])s Stress Test with monitoring (size=$(args["size"]))..."
     # We capture the MonitoringResults object
-    mon_results = stresstest(duration=30, monitoring=true, verbose=false, size=args["size"])
+    mon_results = stresstest(duration=args["duration"], monitoring=true, verbose=false, size=args["size"])
     
     # Store monitoring results in a way that can be serialized to JSON
     # (Extracting raw data from MonitoringResults)

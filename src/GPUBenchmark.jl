@@ -41,6 +41,14 @@ function parse_commandline(args)
             help = "Global size parameter (matrix size). If 0, auto-calculates based on VRAM."
             arg_type = Int
             default = 0
+        "--duration", "-d"
+            help = "Duration of the stress test in seconds."
+            arg_type = Int
+            default = 30
+        "--fraction", "-f"
+            help = "Fraction of VRAM to target during auto-sizing."
+            arg_type = Float64
+            default = 0.4
         "--output-dir", "-o"
             help = "Base directory to save results. A timestamped subdirectory will be created."
             arg_type = String
@@ -208,7 +216,7 @@ function (@main)(ARGS)
     
     # Auto-calculate size if 0 (default)
     if parsed_args["size"] == 0
-        parsed_args["size"] = calculate_reasonable_size()
+        parsed_args["size"] = calculate_reasonable_size(parsed_args["fraction"])
     end
 
     # Determine which benchmarks to run

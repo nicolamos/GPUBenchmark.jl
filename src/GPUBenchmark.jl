@@ -7,6 +7,8 @@ using Dates
 using Printf
 using InteractiveUtils
 using Statistics
+using Logging
+using LoggingExtras
 
 # --- Registry System ---
 
@@ -139,15 +141,16 @@ function generate_text_report(results, output_dir)
 
         if haskey(results["benchmarks"], "gpuinspector")
             r = results["benchmarks"]["gpuinspector"]
-                        if haskey(r, "memory_bandwidth")
-                            bw = r["memory_bandwidth"]
-                            @printf(io, "Memory Bandwidth: %.2f GiB/s\n", bw)
-                        end
-            
-                        if haskey(r, "_raw_monitoring")
-                            mon = r["_raw_monitoring"]
-                            # Calculate avg metrics
-                            if haskey(mon.results, :power)                    # Average over all devices and samples
+            if haskey(r, "memory_bandwidth")
+                bw = r["memory_bandwidth"]
+                @printf(io, "Memory Bandwidth: %.2f GiB/s\n", bw)
+            end
+
+            if haskey(r, "_raw_monitoring")
+                mon = r["_raw_monitoring"]
+                # Calculate avg metrics
+                if haskey(mon.results, :power)
+                    # Average over all devices and samples
                     all_power = reduce(vcat, mon.results[:power])
                     avg_p = mean(all_power)
                     max_p = maximum(all_power)
@@ -251,48 +254,54 @@ function (@main)(ARGS)
         to_run = union(collect(keys(REGISTRY)), ["gpuinspector"])
     end
 
-    # Load dependencies for extensions if needed
-    load_extension_dependencies(to_run)
-
-    results = Dict{String, Any}()
+    # Create timestamped output directory
     timestamp = Dates.format(now(), "yyyy-mm-dd_HHMMSS")
-    results["timestamp"] = timestamp
-    results["cuda_functional"] = CUDA.functional()
-    results["benchmarks"] = Dict{String, Any}()
+    base_dir = parsed_args["output-dir"]
+    full_hostname = get(ENV, "HOSTNAME", get(ENV, "COMPUTERNAME", "localhost"))
+    hostname = split(full_hostname, '.') |> first
+    run_dir = joinpath(base_dir, hostname, timestamp)
+    mkpath(run_dir)
 
-    @info "Starting GPU Benchmark Suite" benchmarks=to_run size=parsed_args["size"]
+    # Set up Multi-Logger (Console + File)
+    log_file = joinpath(run_dir, "benchmark.log")
+    console_logger = ConsoleLogger(stdout)
+    file_logger = SimpleLogger(open(log_file, "w"))
+    tee_logger = TeeLogger(console_logger, file_logger)
 
-    for name in to_run
-        if haskey(REGISTRY, name)
-            @info "Running benchmark: $name"
-            try
-                # Use invokelatest to avoid world age issues with discover_benchmarks
-                results["benchmarks"][name] = Base.invokelatest(REGISTRY[name].run_func, parsed_args)
-                # Cleanup memory after each benchmark
-                Base.invokelatest(cleanup)
-            catch e
-                @error "Benchmark $name failed" exception=e
-                results["benchmarks"][name] = Dict("error" => string(e))
+    with_logger(tee_logger) do
+        @info "Starting GPU Benchmark Suite" benchmarks=to_run size=parsed_args["size"]
+        @info "Logs will be written to $log_file"
+
+        # Load dependencies for extensions if needed
+        load_extension_dependencies(to_run)
+
+        results = Dict{String, Any}()
+        results["timestamp"] = timestamp
+        results["cuda_functional"] = CUDA.functional()
+        results["benchmarks"] = Dict{String, Any}()
+
+        for name in to_run
+            if haskey(REGISTRY, name)
+                @info "Running benchmark: $name"
+                try
+                    # Use invokelatest to avoid world age issues with discover_benchmarks
+                    results["benchmarks"][name] = Base.invokelatest(REGISTRY[name].run_func, parsed_args)
+                    # Cleanup memory after each benchmark
+                    Base.invokelatest(cleanup)
+                catch e
+                    @error "Benchmark $name failed" exception=e
+                    results["benchmarks"][name] = Dict("error" => string(e))
+                end
+            else
+                @warn "Benchmark '$name' not found in registry. Skipping."
             end
-        else
-            @warn "Benchmark '$name' not found in registry. Skipping."
         end
-    end
 
-        # Create timestamped output directory
-        base_dir = parsed_args["output-dir"]
-        # Prefer HOSTNAME env var (set by benchmark_env.sh) then system hostname
-        full_hostname = get(ENV, "HOSTNAME", get(ENV, "COMPUTERNAME", "localhost"))
-        # Match Ansible inventory_hostname style (usually base hostname)
-        hostname = split(full_hostname, '.') |> first
-        run_dir = joinpath(base_dir, hostname, timestamp)
-        mkpath(run_dir)
-    
         @info "Benchmarking complete. Cleaning up and saving results to $run_dir"
         
-        # 1. Cleanup memory before heavy plotting/IO
+        # 1. Final Cleanup memory before heavy plotting/IO
         Base.invokelatest(cleanup)
-    
+
         # 2. JSON (Metadata & High-level metrics)
         json_path = joinpath(run_dir, "metrics.json")
         open(json_path, "w") do f
@@ -301,10 +310,12 @@ function (@main)(ARGS)
         
         # 3. Text Report
         generate_text_report(results, run_dir)
-    
+
         # 4. Plots & Telemetry (HDF5/PNG handled by extensions)
         # Use invokelatest for the extension-provided method
         Base.invokelatest(save_plots, results, run_dir)
+    end
+
     return 0
 end
 

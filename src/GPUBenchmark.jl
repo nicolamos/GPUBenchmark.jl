@@ -62,6 +62,12 @@ function parse_commandline(args)
         "--quiet", "-q"
             help = "Suppress terminal dashboard (useful for batch/ansible)."
             action = :store_true
+        "--show-latest"
+            help = "Show the dashboard for the latest benchmark run and exit."
+            action = :store_true
+        "--show", "-S"
+            help = "Show the dashboard for a specific run path and exit."
+            arg_type = String
         "benchmarks"
             help = "Tasks: sysinfo (default), matmul, gpuinspector, all."
             nargs = '*'
@@ -276,10 +282,20 @@ function (@main)(ARGS)
     parsed_args = parse_commandline(ARGS)
 
     # 3. Load extensions BEFORE building the final task list
-    load_extension_dependencies(parsed_args["benchmarks"], parsed_args["quiet"])
+    load_extension_dependencies(parsed_args["benchmarks"], parsed_args["quiet"] || parsed_args["show_latest"] || !isnothing(parsed_args["show"]))
 
     if parsed_args["list"]
         Base.invokelatest(list_benchmarks)
+        return 0
+    end
+
+    if parsed_args["show_latest"]
+        Base.invokelatest(show_latest, parsed_args["output-dir"])
+        return 0
+    end
+
+    if !isnothing(parsed_args["show"])
+        Base.invokelatest(show_results, parsed_args["show"])
         return 0
     end
     

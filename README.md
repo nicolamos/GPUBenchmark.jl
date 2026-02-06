@@ -63,7 +63,47 @@ gpu_benchmark --threads=auto -- --duration 60 all
 # Headless mode (No terminal dashboard)
 # Ideal for CI/CD, Cron, or Batch jobs (Slurm/PBS)
 gpu_benchmark -- --quiet all
+
+# Show the results of the latest run
+gpu_benchmark -- --show-latest
+
+# Show the results of a specific run
+gpu_benchmark -- --show results/cloud-kvm-gpu-001/2026-02-06_224508
 ```
+
+---
+
+## 📂 Understanding & Viewing Results
+
+Results are saved to `results/<hostname>/<timestamp>/`. You can view them in several ways:
+
+### 1. The Terminal Dashboard (CLI)
+If you have the **Visuals Extension** installed (`Term`, `UnicodePlots`), you can re-render the dashboard:
+```bash
+# Show latest run found in the results directory
+gpu_benchmark -- --show-latest
+
+# Show a specific run path
+gpu_benchmark -- --show results/my-node/2026-02-06_120000
+```
+
+### 2. Julia Scripting & REPL
+For more control, you can use the Julia API to inspect specific runs:
+```julia
+using GPUBenchmark
+
+# Show latest run from default directory
+GPUBenchmark.show_latest()
+
+# Show a specific run by path
+GPUBenchmark.show_results("results/my-node/2026-02-06_120000")
+```
+
+### 3. Filesystem Artifacts
+- **`summary.txt`**: The "Health Certificate". Human-readable report of specs and scores.
+- **`metrics.json`**: Structured data for CI/CD pipelines or database ingestion.
+- **`dashboard.png`**: (Extended) Visual chart of Power, Temp, and Utilization.
+- **`telemetry.h5`**: (Extended) High-frequency raw sensor data.
 
 ---
 
@@ -75,6 +115,21 @@ gpu_benchmark -- --quiet all
 | `matmul` | **Core** | Raw compute: Peak FP32 TFLOPS via massive matrix ops. |
 | `gpuinspector`| **Ext** | **Burn-in:** Parallel stress test with telemetry. |
 | `all` | - | Runs all available tasks sequentially. |
+
+---
+
+## ⚙️ CLI Reference
+
+| Flag | Long Flag | Description | Default |
+| :--- | :--- | :--- | :--- |
+| `-d` | `--duration` | Stress test duration in seconds | `30` |
+| `-f` | `--fraction` | Target VRAM usage fraction (0.0 to 1.0) | `0.4` |
+| `-s` | `--size` | Manual matrix size (N). If 0, auto-calculates. | `0` |
+| `-o` | `--output-dir` | Root directory for results | `results` |
+| `-v` | `--verbose` | Enable debug logging (level DEBUG) | - |
+| `-q` | `--quiet` | Suppress terminal dashboard (Batch mode) | - |
+| `-S` | `--show` | Show results of the latest run and exit | - |
+| `-l` | `--list` | List all available benchmark tasks | - |
 
 ---
 

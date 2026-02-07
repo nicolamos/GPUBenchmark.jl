@@ -77,13 +77,44 @@ function show_results(path::String)
         )
     end
 
-    # 3. Final Layout
+    # 3. Telemetry Trends (UnicodePlots)
+    plots = ""
+    if haskey(bench_data, "gpuinspector") && haskey(bench_data["gpuinspector"], "monitoring")
+        mon = bench_data["gpuinspector"]["monitoring"]
+        if haskey(mon, "metrics")
+            metrics = mon["metrics"]
+            
+            # Helper to create a compact sparkline-style plot
+            function create_sparkline(data, title, color)
+                if isempty(data) return "" end
+                # If multi-GPU, just show the first one for the dashboard summary
+                vals = data isa Vector{Vector{Any}} || (data isa Vector{Any} && !isempty(data) && first(data) isa Vector) ? data[1] : data
+                # Convert to Float64 for UnicodePlots
+                vals = Float64.(vals)
+                p = lineplot(vals, title=title, color=color, width=40, height=5, border=:none, canvas=DotCanvas)
+                return string(p)
+            end
+
+            p_plot = haskey(metrics, "power") ? create_sparkline(metrics["power"], "Power (W)", :yellow) : ""
+            t_plot = haskey(metrics, "temperature") ? create_sparkline(metrics["temperature"], "Temp (°C)", :red) : ""
+            
+            if !isempty(p_plot) || !isempty(t_plot)
+                plots = "{bold}Telemetry Trends:{/bold}\n" * p_plot * "\n" * t_plot
+            end
+        end
+    end
+
+    # 4. Final Layout
     # Use safe concatenation to avoid crashes if tbl is nothing
     content = header_content / ""
     if !isnothing(tbl)
         content = content / tbl
     else
         content = content / "{red}Failed to generate results table.{/red}"
+    end
+
+    if !isempty(plots)
+        content = content / "" / plots
     end
     
     println(Panel(

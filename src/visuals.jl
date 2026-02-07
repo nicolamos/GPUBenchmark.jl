@@ -26,43 +26,68 @@ function show_results(path::String)
     
     # 2. Benchmark Table
     bench_data = results["benchmarks"]
-    rows = []
+    
+    # Term.Table expects a vector of vectors where each vector is a COLUMN
+    # or a Matrix. Let's use columns.
+    tasks = String[]
+    perf = String[]
+    details = String[]
+
+    function add_row(t, p, d)
+        push!(tasks, string(t))
+        push!(perf, string(p))
+        push!(details, string(d))
+    end
     
     if haskey(bench_data, "sysinfo")
         si = bench_data["sysinfo"]
-        push!(rows, ["Hardware", si["gpu_name"], si["vram_total"]])
+        add_row!("Hardware", si["gpu_name"], si["vram_total"])
     end
     
     if haskey(bench_data, "matmul")
         m = bench_data["matmul"]
-        push!(rows, ["MatMul (FP32)", "$(round(m["tflops"], digits=2)) TFLOPS", "N=$(m["matrix_size"])"])
+        add_row!("MatMul (FP32)", "$(round(m["tflops"], digits=2)) TFLOPS", "N=$(m["matrix_size"])")
     end
 
     if haskey(bench_data, "tensorcore")
         t = bench_data["tensorcore"]
-        push!(rows, ["TensorCore", "$(round(t["tflops"], digits=2)) TFLOPS", "Mixed Prec"])
+        add_row!("TensorCore", "$(round(t["tflops"], digits=2)) TFLOPS", "Mixed Prec")
     end
     
     if haskey(bench_data, "gpuinspector")
         gi = bench_data["gpuinspector"]
         if haskey(gi, "memory_bandwidth")
-            push!(rows, ["Memory BW", "$(round(gi["memory_bandwidth"], digits=2)) GiB/s", "Burn-in"])
+            add_row!("Memory BW", "$(round(gi["memory_bandwidth"], digits=2)) GiB/s", "Burn-in")
         end
     end
 
-    tbl = Table(
-        rows,
-        header=["Task", "Performance / Model", "Details"],
-        columns_justify=[:left, :left, :right],
-        columns_widths=[15, 30, 15],
-        box=:ROUNDED,
-        style="blue"
-    )
+    if isempty(tasks)
+        tbl = "No benchmark data found in metrics."
+    else
+        # Term.Table expects a Matrix or similar Tables.jl compatible object
+        # hcat creates a Matrix where each argument is a column.
+        data = hcat(tasks, perf, details)
+        tbl = Table(
+            data,
+            header=["Task", "Performance / Model", "Details"],
+            columns_justify=[:left, :left, :right],
+            columns_widths=[15, 30, 15],
+            box=:ROUNDED,
+            style="blue"
+        )
+    end
 
-    # 3. Telemetry Visuals (Future: Sparklines with UnicodePlots)
+    # 3. Final Layout
+    # Use safe concatenation to avoid crashes if tbl is nothing
+    content = header_content / ""
+    if !isnothing(tbl)
+        content = content / tbl
+    else
+        content = content / "{red}Failed to generate results table.{/red}"
+    end
     
     println(Panel(
-        header_content / "" / tbl,
+        content,
         title=" {bold blue}GPUBenchmark.jl Summary Report{/bold blue} ",
         subtitle="{dim}Path: $path{/dim}",
         style="blue",

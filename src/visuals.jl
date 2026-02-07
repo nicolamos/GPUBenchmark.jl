@@ -87,19 +87,47 @@ function show_results(path::String)
             # Helper to create a compact sparkline-style plot
             function create_sparkline(data, title, color)
                 if isempty(data) return "" end
-                # If multi-GPU, just show the first one for the dashboard summary
-                vals = data isa Vector{Vector{Any}} || (data isa Vector{Any} && !isempty(data) && first(data) isa Vector) ? data[1] : data
-                # Convert to Float64 for UnicodePlots
-                vals = Float64.(vals)
-                p = lineplot(vals, title=title, color=color, width=40, height=5, border=:none, canvas=DotCanvas)
-                return string(p)
+                
+                # Data is Vector{Any} containing Vectors (one per GPU)
+                all_vals = (data isa Vector || data isa AbstractVector) && !isempty(data) && first(data) isa AbstractVector ? data : [data]
+                
+                # Create base plot with BrailleCanvas (higher density)
+                first_vals = Float64.(all_vals[1])
+                p = lineplot(first_vals, 
+                    title=title, 
+                    color=color, 
+                    width=55, 
+                    height=7, 
+                    border=:none, 
+                    canvas=BrailleCanvas,
+                    xlabel="", ylabel=""
+                )
+                
+                # Overlay other GPUs if present
+                for i in 2:length(all_vals)
+                    lineplot!(p, Float64.(all_vals[i]))
+                end
+                
+                # Calculate global stats
+                flat_vals = reduce(vcat, all_vals)
+                max_v = round(maximum(flat_vals), digits=1)
+                min_v = round(minimum(flat_vals), digits=1)
+                avg_v = round(sum(flat_vals)/length(flat_vals), digits=1)
+                
+                stats_str = "{dim}  Min: $min_v  Avg: $avg_v  Max: $max_v{/dim}"
+                
+                return string(p) * "\n" * stats_str
             end
 
-            p_plot = haskey(metrics, "power") ? create_sparkline(metrics["power"], "Power (W)", :yellow) : ""
-            t_plot = haskey(metrics, "temperature") ? create_sparkline(metrics["temperature"], "Temp (°C)", :red) : ""
+            # Collect available plots
+            available_plots = []
             
-            if !isempty(p_plot) || !isempty(t_plot)
-                plots = "{bold}Telemetry Trends:{/bold}\n" * p_plot * "\n" * t_plot
+            haskey(metrics, "power") && push!(available_plots, create_sparkline(metrics["power"], "Power (W)", :yellow))
+            haskey(metrics, "temperature") && push!(available_plots, create_sparkline(metrics["temperature"], "Temp (°C)", :red))
+            haskey(metrics, "utilization") && push!(available_plots, create_sparkline(metrics["utilization"], "GPU Util (%)", :green))
+            
+            if !isempty(available_plots)
+                plots = "{bold}Telemetry Trends (All GPUs):{/bold}\n" * join(available_plots, "\n\n")
             end
         end
     end

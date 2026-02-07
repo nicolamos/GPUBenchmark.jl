@@ -33,7 +33,7 @@ function show_results(path::String)
     perf = String[]
     details = String[]
 
-    function add_row(t, p, d)
+    function add_row!(t, p, d)
         push!(tasks, string(t))
         push!(perf, string(p))
         push!(details, string(d))

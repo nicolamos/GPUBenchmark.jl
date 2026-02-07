@@ -84,50 +84,70 @@ function show_results(path::String)
         if haskey(mon, "metrics")
             metrics = mon["metrics"]
             
-            # Helper to create a compact sparkline-style plot
-            function create_sparkline(data, title, color)
+            # Distinct colors for multi-GPU distinction
+            const GPU_COLORS = [:yellow, :cyan, :magenta, :blue, :green, :red, :white]
+
+            # Smoothing and resampling helper
+            function smooth_and_resample(data, target_points=80)
+                if length(data) <= target_points
+                    return Float64.(data)
+                end
+                
+                # 1. Simple Moving Average (Smoothing)
+                window = max(2, length(data) ÷ target_points)
+                smoothed = [sum(data[i:min(i+window-1, end)]) / length(data[i:min(i+window-1, end)]) 
+                           for i in 1:length(data)]
+                
+                # 2. Resample to target_points
+                indices = round.(Int, range(1, length(smoothed), length=target_points))
+                return smoothed[indices]
+            end
+
+            function create_sparkline(data, title)
                 if isempty(data) return "" end
                 
                 # Data is Vector{Any} containing Vectors (one per GPU)
                 all_vals = (data isa Vector || data isa AbstractVector) && !isempty(data) && first(data) isa AbstractVector ? data : [data]
+                num_gpus = length(all_vals)
                 
-                # Create base plot with BrailleCanvas (higher density)
-                first_vals = Float64.(all_vals[1])
-                p = lineplot(first_vals, 
+                # Create base plot with BrailleCanvas
+                # Smooth and resample for professional "GPUInspector style" curves
+                p = lineplot(smooth_and_resample(all_vals[1]), 
                     title=title, 
-                    color=color, 
-                    width=55, 
-                    height=7, 
-                    border=:none, 
+                    name="GPU 0",
+                    color=GPU_COLORS[1], 
+                    width=65, 
+                    height=10, 
+                    border=:solid, 
                     canvas=BrailleCanvas,
                     xlabel="", ylabel=""
                 )
                 
-                # Overlay other GPUs if present
-                for i in 2:length(all_vals)
-                    lineplot!(p, Float64.(all_vals[i]))
+                # Overlay other GPUs
+                for i in 2:num_gpus
+                    lineplot!(p, smooth_and_resample(all_vals[i]), 
+                        name="GPU $(i-1)", 
+                        color=GPU_COLORS[((i-1) % length(GPU_COLORS)) + 1]
+                    )
                 end
                 
-                # Calculate global stats
-                flat_vals = reduce(vcat, all_vals)
-                max_v = round(maximum(flat_vals), digits=1)
-                min_v = round(minimum(flat_vals), digits=1)
-                avg_v = round(sum(flat_vals)/length(flat_vals), digits=1)
+                # Summary Stats
+                stats_lines = String[]
+                for i in 1:num_gpus
+                    v = Float64.(all_vals[i])
+                    color = GPU_COLORS[((i-1) % length(GPU_COLORS)) + 1]
+                    push!(stats_lines, "{$color}GPU $(i-1) Max: $(round(maximum(v), digits=1)){/$color}")
+                end
                 
-                stats_str = "{dim}  Min: $min_v  Avg: $avg_v  Max: $max_v{/dim}"
-                
-                return string(p) * "\n" * stats_str
+                return string(p) * "\n  " * join(stats_lines, "  |  ")
             end
 
-            # Collect available plots
             available_plots = []
-            
-            haskey(metrics, "power") && push!(available_plots, create_sparkline(metrics["power"], "Power (W)", :yellow))
-            haskey(metrics, "temperature") && push!(available_plots, create_sparkline(metrics["temperature"], "Temp (°C)", :red))
-            haskey(metrics, "utilization") && push!(available_plots, create_sparkline(metrics["utilization"], "GPU Util (%)", :green))
+            haskey(metrics, "power") && push!(available_plots, create_sparkline(metrics["power"], "Power (W)"))
+            haskey(metrics, "temperature") && push!(available_plots, create_sparkline(metrics["temperature"], "Temperature (°C)"))
             
             if !isempty(available_plots)
-                plots = "{bold}Telemetry Trends (All GPUs):{/bold}\n" * join(available_plots, "\n\n")
+                plots = "{bold}Telemetry Trends (Burn-in Phase):{/bold}\n" * join(available_plots, "\n\n")
             end
         end
     end

@@ -47,15 +47,28 @@ Keeps the suite in a versioned Julia environment without a global binary.
 
 ## 🚀 Step 2: Enable Dashboards & Stress Tests
 
-By default, the tool is lightweight and only performs core tests. To enable the **Dashboard** (`Term.jl`) and **Parallel Burn-in** (`GPUInspector.jl`), you must add the feature extensions.
+By default, the tool is lightweight and only performs core tests. To enable the **Dashboard** (`Term.jl`) and **Parallel Burn-in** (`GPUInspector.jl`), you must make the extension dependencies available.
 
-### For Global CLI Tool (Mode 1)
-Run this command to add stress testing capabilities to the app environment (visuals are now included by default):
+### Method 1: Environment Plugins (Recommended)
+You can point the tool to an external environment containing the plugins. This is the cleanest way for isolated App installations.
+
+1. **Create a plugin environment:**
+   ```bash
+   mkdir -p ~/.julia/plugins/gpubenchmark
+   julia --project=~/.julia/plugins/gpubenchmark -e 'using Pkg; Pkg.add(["GPUInspector", "CairoMakie"])'
+   ```
+2. **Configure the tool:** Add this to your `~/.bashrc`:
+   ```bash
+   export GPUBENCHMARK_PLUGINS="$HOME/.julia/plugins/gpubenchmark"
+   ```
+
+### Method 2: Global CLI Tool (Mode 1)
+Inject the plugins directly into the App's private environment:
 ```bash
 julia --project=$HOME/.julia/apps/GPUBenchmark -e 'using Pkg; Pkg.add(["GPUInspector", "CairoMakie"])'
 ```
 
-### For Shared Environment (Mode 2)
+### Method 3: Shared Environment (Mode 2)
 ```julia
 (gpu-test) pkg> add GPUInspector CairoMakie
 ```

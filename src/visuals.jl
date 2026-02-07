@@ -103,7 +103,7 @@ function show_results(path::String)
                 return smoothed[indices]
             end
 
-            function create_sparkline(data, title)
+            function create_sparkline(data, title, ylims=nothing)
                 if isempty(data) return "" end
                 
                 # Data is Vector{Any} containing Vectors (one per GPU)
@@ -111,8 +111,13 @@ function show_results(path::String)
                 num_gpus = length(all_vals)
                 
                 # Create base plot with BrailleCanvas
-                # Smooth and resample for professional "GPUInspector style" curves
-                p = lineplot(smooth_and_resample(all_vals[1]), 
+                # Smooth and resample for professional curves
+                first_vals = smooth_and_resample(all_vals[1])
+                
+                # Set limits if provided, otherwise auto
+                kw = ylims === nothing ? NamedTuple() : (ylim=ylims,)
+                
+                p = lineplot(first_vals, 
                     title=title, 
                     name="GPU 0",
                     color=GPU_COLORS[1], 
@@ -120,7 +125,8 @@ function show_results(path::String)
                     height=10, 
                     border=:solid, 
                     canvas=BrailleCanvas,
-                    xlabel="", ylabel=""
+                    xlabel="", ylabel="";
+                    kw...
                 )
                 
                 # Overlay other GPUs
@@ -144,8 +150,8 @@ function show_results(path::String)
 
             available_plots = []
             haskey(metrics, "power") && push!(available_plots, create_sparkline(metrics["power"], "Power (W)"))
-            haskey(metrics, "mem") && push!(available_plots, create_sparkline(metrics["mem"], "Memory Util (%)"))
-            haskey(metrics, "compute") && push!(available_plots, create_sparkline(metrics["compute"], "Compute Util (%)"))
+            haskey(metrics, "compute") && push!(available_plots, create_sparkline(metrics["compute"], "Compute Util (%)", (0, 100)))
+            haskey(metrics, "mem") && push!(available_plots, create_sparkline(metrics["mem"], "Memory Util (%)", (0, 100)))
             haskey(metrics, "temperature") && push!(available_plots, create_sparkline(metrics["temperature"], "Temperature (°C)"))
             
             if !isempty(available_plots)

@@ -251,22 +251,27 @@ function cleanup(args...) end
 
 Forcing the loading of packages that trigger Pkg extensions.
 """
-function load_extension_dependencies(to_run, quiet=false)
-    # 1. Extensions for stress testing
-    needs_gpuinspector = "all" in to_run || "gpuinspector" in to_run
+function load_extension_dependencies(parsed_args)
+    to_run = parsed_args.benchmarks
+    # 1. Extensions for stress testing and telemetry
+    needs_gpuinspector = "all" in to_run || 
+                         "gpuinspector" in to_run || 
+                         parsed_args.show_latest || 
+                         !isnothing(parsed_args.show)
     
     if needs_gpuinspector
-        @info "STEP: Loading extension dependencies (GPUInspector, CairoMakie)..."
+        if !parsed_args.quiet
+            @info "STEP: Loading extension dependencies (GPUInspector, CairoMakie)..."
+        end
         try
             Base.eval(Main, :(using GPUInspector))
             Base.eval(Main, :(using CairoMakie))
         catch e
-            @warn "Could not load extension dependencies. Parallel stress test will be unavailable." exception=e
+            if !parsed_args.quiet
+                @warn "Could not load extension dependencies. Telemetry and plots will be limited."
+            end
         end
     end
-
-    # 2. Extensions for visuals
-    # (Term and UnicodePlots are now core dependencies handled by the Visuals submodule)
 end
 
 # --- Entry Points ---
@@ -279,9 +284,8 @@ function (@main)(ARGS)
     parsed_args = parse_commandline(ARGS)
     isnothing(parsed_args) && return 0
 
-    # 3. Load extensions BEFORE building the final task list
-    # Only skip visual loading if explicit 'quiet' is passed.
-    load_extension_dependencies(parsed_args.benchmarks, parsed_args.quiet)
+    # 3. Load extensions BEFORE executing anything
+    load_extension_dependencies(parsed_args)
 
     if parsed_args.list
         Base.invokelatest(list_benchmarks)

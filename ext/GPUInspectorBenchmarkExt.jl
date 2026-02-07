@@ -40,11 +40,8 @@ function run_gpuinspector(args)
         verbose=true
     )
     
-    # Store monitoring data for JSON serialization
-    results["monitoring"] = Dict(
-        "times" => mon_results.times,
-        "metrics" => Dict(string(k) => v for (k, v) in mon_results.results)
-    )
+    # Store only summary/metadata in JSON to avoid redundancy with HDF5
+    results["monitoring_file"] = "telemetry.h5"
     
     # Attach raw object for save_plots
     results["_raw_monitoring"] = mon_results
@@ -58,16 +55,16 @@ function GPUBenchmark.save_plots(results, output_path)
         if haskey(g_res, "_raw_monitoring")
             mon_results = g_res["_raw_monitoring"]
             
-            # Save raw HDF5 telemetry
+            # Save raw HDF5 telemetry (the source of truth)
             h5_file = joinpath(output_path, "telemetry.h5")
             @info "Saving raw telemetry to $h5_file"
             try
-                save_monitoring_results(h5_file, mon_results)
+                save_monitoring_results(h5_file, mon_results, overwrite=true)
             catch e
                 @error "Failed to save HDF5 telemetry" exception=e
             end
             
-            # Save Plots (Tiled Dashboard)
+            # Save Plots (Tiled Dashboard Image)
             plot_file = joinpath(output_path, "dashboard.png")
             @info "Saving dashboard to $plot_file"
             try
@@ -86,6 +83,87 @@ function GPUBenchmark.cleanup()
         clear_all_gpus_memory()
     catch e
         @warn "Cleanup encountered an issue" exception=e
+    end
+end
+
+function GPUBenchmark.Visuals.render_telemetry(bench_data, run_path)
+    h5_file = joinpath(run_path, "telemetry.h5")
+    if !isfile(h5_file)
+        return ""
+    end
+
+    try
+        # 1. Load from HDF5 (source of truth)
+        res = load_monitoring_results(h5_file)
+        
+        plot_strings = String[]
+        
+        # Helper for smoothing
+        function smooth_and_resample(data, target_points=80)
+            if length(data) <= target_points return Float64.(data) end
+            window = max(2, length(data) ÷ target_points)
+            smoothed = [sum(data[i:min(i+window-1, end)]) / length(data[i:min(i+window-1, end)]) for i in 1:length(data)]
+            return smoothed[round.(Int, range(1, length(smoothed), length=target_points))]
+        end
+
+        # Order: Power, Compute, Mem, Temp
+        requested_symbols = [:power, :compute, :mem, :temperature]
+        titles = Dict(
+            :power => "Power (W)",
+            :compute => "Compute Util (%)",
+            :mem => "Memory Util (%)",
+            :temperature => "Temperature (°C)"
+        )
+        ylims = Dict(
+            :compute => (0, 100),
+            :mem => (0, 100)
+        )
+
+        for s in requested_symbols
+            if haskey(res.results, s)
+                data = res.results[s]
+                num_gpus = length(res.devices)
+                
+                # Aggregate for Global Trend (requested by user)
+                # data is Matrix-like in monitoring results? No, Dict{Symbol, Vector{Vector{Float64}}}
+                # Each inner vector is MEASUREMENTS for all GPUs at ONE time step?
+                # Actually GPUInspector's save_monitoring_results stores Matrix{T} where rows = devices.
+                # load_monitoring_results returns Vector{Vector{Float64}} where each inner vector is ONE GPU's history.
+                
+                # Let's verify aggregation: we need history of ALL GPUs averaged at each time step.
+                # 'data' is Vector{Vector{Float64}} -> length(data) = num_gpus, each subvector is history.
+                history_len = length(data[1])
+                aggregated = [mean([data[gpu][t] for gpu in 1:num_gpus]) for t in 1:history_len]
+                vals = smooth_and_resample(aggregated)
+                
+                # Create plot
+                p = lineplot(vals, 
+                    title=titles[s], 
+                    color=:cyan, 
+                    width=65, height=10, 
+                    border=:solid, canvas=BrailleCanvas,
+                    xlabel="", ylabel=""
+                )
+                if haskey(ylims, s)
+                    p = lineplot(vals, 
+                        title=titles[s], color=:cyan, width=65, height=10, 
+                        border=:solid, canvas=BrailleCanvas,
+                        xlabel="", ylabel="", ylim=ylims[s]
+                    )
+                end
+
+                # Global Stats
+                all_vals = reduce(vcat, data)
+                stats = "{dim}  Global Max: $(round(maximum(all_vals), digits=1))  |  Global Avg: $(round(mean(all_vals), digits=1))  |  Devices: $num_gpus{/dim}"
+                
+                push!(plot_strings, string(p) * "\n" * stats)
+            end
+        end
+
+        return "{bold}Node Telemetry Summary (from HDF5):{/bold}\n" * join(plot_strings, "\n\n")
+
+    catch e
+        return "{red}Failed to load telemetry from HDF5: $e{/red}"
     end
 end
 

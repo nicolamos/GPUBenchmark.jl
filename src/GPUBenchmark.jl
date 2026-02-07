@@ -357,9 +357,9 @@ function (@main)(ARGS)
             if Base.invokelatest(haskey, REGISTRY, name)
                 @info "STEP: Running task '$name'..."
                 try
-                    # Pass a dictionary for the benchmark tasks to maintain compatibility
-                    task_args = Dict(pairs(parsed_args))
-                    task_args[:size] = size 
+                    # Pass a dictionary with string keys for the benchmark tasks to maintain compatibility
+                    task_args = Dict(string(k) => v for (k, v) in pairs(parsed_args))
+                    task_args["size"] = size 
                     
                     results["benchmarks"][name] = Base.invokelatest(REGISTRY[name].run_func, task_args)
                     # Inline Summary

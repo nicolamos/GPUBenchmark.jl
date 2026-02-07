@@ -6,6 +6,7 @@ using CairoMakie
 using CUDA
 using JSON
 using Statistics: mean
+using UnicodePlots: BrailleCanvas, lineplot
 
 function run_gpuinspector(args)
     @info "Running GPUInspector deep inspection on ALL available GPUs..."

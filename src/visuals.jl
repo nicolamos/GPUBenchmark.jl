@@ -7,6 +7,9 @@ using JSON
 
 export show_results
 
+# Distinct colors for multi-GPU distinction
+const GPU_COLORS = [:yellow, :cyan, :magenta, :blue, :green, :red, :white]
+
 function show_results(path::String)
     metrics_path = joinpath(path, "metrics.json")
     if !isfile(metrics_path)
@@ -84,9 +87,6 @@ function show_results(path::String)
         if haskey(mon, "metrics")
             metrics = mon["metrics"]
             
-            # Distinct colors for multi-GPU distinction
-            const GPU_COLORS = [:yellow, :cyan, :magenta, :blue, :green, :red, :white]
-
             # Smoothing and resampling helper
             function smooth_and_resample(data, target_points=80)
                 if length(data) <= target_points
@@ -144,6 +144,8 @@ function show_results(path::String)
 
             available_plots = []
             haskey(metrics, "power") && push!(available_plots, create_sparkline(metrics["power"], "Power (W)"))
+            haskey(metrics, "mem") && push!(available_plots, create_sparkline(metrics["mem"], "Memory Util (%)"))
+            haskey(metrics, "compute") && push!(available_plots, create_sparkline(metrics["compute"], "Compute Util (%)"))
             haskey(metrics, "temperature") && push!(available_plots, create_sparkline(metrics["temperature"], "Temperature (°C)"))
             
             if !isempty(available_plots)

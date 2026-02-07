@@ -5,6 +5,7 @@ using GPUInspector
 using CairoMakie
 using CUDA
 using JSON
+using Statistics: mean
 
 function run_gpuinspector(args)
     @info "Running GPUInspector deep inspection on ALL available GPUs..."

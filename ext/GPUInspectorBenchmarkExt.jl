@@ -86,7 +86,7 @@ function GPUBenchmark.cleanup()
     end
 end
 
-function GPUBenchmark.Visuals.render_telemetry(bench_data, run_path)
+function _render_telemetry_gpuinspector(bench_data, run_path)
     h5_file = joinpath(run_path, "telemetry.h5")
     if !isfile(h5_file)
         return ""
@@ -125,13 +125,6 @@ function GPUBenchmark.Visuals.render_telemetry(bench_data, run_path)
                 num_gpus = length(res.devices)
                 
                 # Aggregate for Global Trend (requested by user)
-                # data is Matrix-like in monitoring results? No, Dict{Symbol, Vector{Vector{Float64}}}
-                # Each inner vector is MEASUREMENTS for all GPUs at ONE time step?
-                # Actually GPUInspector's save_monitoring_results stores Matrix{T} where rows = devices.
-                # load_monitoring_results returns Vector{Vector{Float64}} where each inner vector is ONE GPU's history.
-                
-                # Let's verify aggregation: we need history of ALL GPUs averaged at each time step.
-                # 'data' is Vector{Vector{Float64}} -> length(data) = num_gpus, each subvector is history.
                 history_len = length(data[1])
                 aggregated = [mean([data[gpu][t] for gpu in 1:num_gpus]) for t in 1:history_len]
                 vals = smooth_and_resample(aggregated)
@@ -168,6 +161,9 @@ function GPUBenchmark.Visuals.render_telemetry(bench_data, run_path)
 end
 
 function __init__()
+    # Register the telemetry renderer
+    GPUBenchmark.Visuals.TELEMETRY_RENDERER[] = _render_telemetry_gpuinspector
+
     GPUBenchmark.register_benchmark(
         "gpuinspector",
         "Parallel GPU stress test, bandwidth, and telemetry across all devices",

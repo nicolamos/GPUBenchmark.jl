@@ -8,13 +8,16 @@ using Statistics: mean
 
 export show_results
 
-# Stubs for extension overrides
-function render_telemetry(bench_data, run_path)
-    # Fallback if GPUInspector isn't available
+# Dynamic hook for extensions to provide telemetry rendering
+const TELEMETRY_RENDERER = Ref{Function}((bench_data, run_path) -> begin
     if haskey(bench_data, "gpuinspector") && haskey(bench_data["gpuinspector"], "monitoring_file")
         return "{dim}Telemetry data available but GPUInspector extension not loaded.{/dim}"
     end
     return ""
+end)
+
+function render_telemetry(bench_data, run_path)
+    return TELEMETRY_RENDERER[](bench_data, run_path)
 end
 
 function show_results(path::String)

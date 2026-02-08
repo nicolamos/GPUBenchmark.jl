@@ -260,14 +260,6 @@ function load_extension_dependencies(parsed_args)
                          !isnothing(parsed_args.show)
     
     if needs_gpuinspector
-        # Discover optional plugin environment (useful for isolated Apps)
-        plugin_env = get(ENV, "GPUBENCHMARK_PLUGINS", "")
-        if !isempty(plugin_env) && isdir(plugin_env)
-            if !(plugin_env in LOAD_PATH)
-                push!(LOAD_PATH, plugin_env)
-            end
-        end
-
         if !parsed_args.quiet
             @info "STEP: Loading extension dependencies (GPUInspector, CairoMakie)..."
         end

@@ -84,8 +84,72 @@ julia --project=@gpu-test -m GPUBenchmark --show-latest
 | :--- | :--- | :--- |
 | `sysinfo` | **Core** | Hardware audit: GPU model, VRAM, PCI IDs. |
 | `matmul` | **Core** | Raw compute: FP32 TFLOPS via matrix operations. |
+| `scaling` | **Core** | **Multi-GPU Scaling:** Strong/Weak scaling analysis & parallel probing. |
 | `gpuinspector`| **Ext** | **Burn-in:** Parallel stress test with telemetry (Requires Plugins). |
 | `all` | - | Runs all available tasks sequentially. |
+
+---
+
+## 🚀 Advanced Benchmarking
+
+The suite supports modular scaling benchmarks and custom algorithm plugins.
+
+### 📊 Scaling Benchmark
+Measure performance across different problem sizes and multiple GPUs simultaneously.
+
+```bash
+# Run default scaling benchmark (auto-sizes based on VRAM)
+julia --project=@gpu-test -m GPUBenchmark scaling
+
+# Benchmark specific GPUs in parallel with custom threads
+julia --project=@gpu-test -m GPUBenchmark scaling --devices 0,1 --parallel --cpu-threads 8
+```
+
+**Key Flags:**
+- `--sizes`: Comma-separated list of matrix sizes (e.g., `2048,4096`).
+- `--devices`: GPU IDs to use (`0,1,2`) or `all`.
+- `--parallel`: Enable parallel probing (evaluates system-wide bottlenecks).
+- `--algorithm`: Select a registered algorithm (default: `matmul`).
+
+### 🧩 Custom Algorithms (Plugins)
+The suite uses a **Hybrid Plugin Strategy**:
+1.  **Dependencies** are managed by your Julia environment (`@gpu-test`).
+2.  **Discovery** is handled by the CLI by scanning a local `plugins/` folder.
+
+**1. Create a plugin module (`plugins/MyCustom.jl`):**
+```julia
+module MyCustom
+
+using GPUBenchmark
+using Statistics # Example dependency
+
+struct MyAlg <: GPUBenchmark.AbstractAlgorithm end
+
+# CPU implementation (uses BenchmarkTools internally)
+function GPUBenchmark.run_cpu(::MyAlg, n, threads)
+    # ... logic ...
+    return Dict("time_s" => t, "tflops" => ops/t/1e12, "threads" => threads)
+end
+
+# GPU implementation
+function GPUBenchmark.run_gpu(::MyAlg, n)
+    # ... logic ...
+    return Dict("time_s" => t, "tflops" => ops/t/1e12)
+end
+
+# Plugins register themselves when loaded
+function __init__()
+    GPUBenchmark.register_algorithm("my_custom", MyAlg())
+end
+
+end # module
+```
+
+**2. Run the benchmark:**
+The CLI automatically detects any `.jl` files in the `plugins/` directory and loads them as modules.
+```bash
+julia --project=@gpu-test -m GPUBenchmark scaling --algorithm my_custom
+```
 
 ---
 

@@ -1,12 +1,16 @@
 module TensorCore
 
 using CUDA
-using ..GPUBenchmark: register_benchmark
+import ..GPUBenchmark.Core: run_cpu, run_gpu
+using ..GPUBenchmark.Core: register_benchmark, register_algorithm, AbstractAlgorithm
 
-function run_tensorcore(args)
-    n = get(args, "size", 10000)
-    results = Dict{String, Any}()
-    
+struct TensorCoreAlg <: AbstractAlgorithm end
+
+function run_cpu(::TensorCoreAlg, n, threads)
+    return Dict("error" => "Tensor Cores are not available on CPU.")
+end
+
+function run_gpu(::TensorCoreAlg, n)
     if !CUDA.functional()
         return Dict("error" => "CUDA not functional")
     end
@@ -18,13 +22,7 @@ function run_tensorcore(args)
         return Dict("error" => "Compute Capability $(cc) does not support Tensor Cores (7.0+ required)")
     end
 
-    results["gpu_name"] = name(dev)
-    results["compute_capability"] = string(cc)
-    results["matrix_size"] = n
-    
     # Tensor Core Benchmark (Mixed Precision: FP16 input, FP32 accumulate)
-    # CUDA.jl uses cublasGemmEx internally which leverages Tensor Cores 
-    # when using Float16 inputs.
     A = CUDA.rand(Float16, n, n)
     B = CUDA.rand(Float16, n, n)
     
@@ -37,21 +35,29 @@ function run_tensorcore(args)
         CUDA.unsafe_free!(C)
     end
     
-    # Explicitly free input matrices
     CUDA.unsafe_free!(A)
     CUDA.unsafe_free!(B)
     
-    results["time_s"] = t
-    results["tflops"] = (2.0 * n^3) / t / 1e12
-    
-    return results
+    return Dict(
+        "time_s" => t,
+        "tflops" => (2.0 * n^3) / t / 1e12,
+        "mode" => "gpu",
+        "precision" => "mixed (FP16/FP32)"
+    )
 end
 
-# Register the benchmark
+# Keep legacy task
+function run_tensorcore_task(args)
+    n = get(args, "size", 10000)
+    return run_gpu(TensorCoreAlg(), n)
+end
+
 register_benchmark(
     "tensorcore", 
     "Mixed-precision Tensor Core benchmark (FP16/FP32)", 
-    run_tensorcore
+    run_tensorcore_task
 )
+
+register_algorithm("tensorcore", TensorCoreAlg())
 
 end # module

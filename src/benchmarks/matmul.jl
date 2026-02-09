@@ -1,21 +1,38 @@
 module MatMul
 
 using CUDA
-using ..GPUBenchmark: register_benchmark
+using BenchmarkTools
+using LinearAlgebra
+import ..GPUBenchmark.Core: run_cpu, run_gpu
+using ..GPUBenchmark.Core: register_benchmark, register_algorithm, AbstractAlgorithm
 
-function run_matmul(args)
-    n = get(args, "size", 10000)
-    results = Dict{String, Any}()
+struct MatMulAlg <: AbstractAlgorithm end
+
+function run_cpu(::MatMulAlg, n, threads)
+    # Configure BLAS threads for this run
+    LinearAlgebra.BLAS.set_num_threads(threads)
     
+    A = rand(Float32, n, n)
+    B = rand(Float32, n, n)
+    
+    # Use BenchmarkTools for accurate CPU timing
+    t = @belapsed begin
+        $A * $B
+    end
+    
+    return Dict(
+        "time_s" => t,
+        "tflops" => (2.0 * n^3) / t / 1e12,
+        "mode" => "cpu",
+        "threads" => threads
+    )
+end
+
+function run_gpu(::MatMulAlg, n)
     if !CUDA.functional()
         return Dict("error" => "CUDA not functional")
     end
 
-    dev = CUDA.device()
-    results["gpu_name"] = name(dev)
-    results["matrix_size"] = n
-    
-    # Matrix Multiplication Benchmark
     A = CUDA.rand(Float32, n, n)
     B = CUDA.rand(Float32, n, n)
     
@@ -28,21 +45,28 @@ function run_matmul(args)
         CUDA.unsafe_free!(C)
     end
     
-    # Explicitly free input matrices
     CUDA.unsafe_free!(A)
     CUDA.unsafe_free!(B)
     
-    results["time_s"] = t
-    results["tflops"] = (2.0 * n^3) / t / 1e12
-    
-    return results
+    return Dict(
+        "time_s" => t,
+        "tflops" => (2.0 * n^3) / t / 1e12,
+        "mode" => "gpu"
+    )
 end
 
-# Register the benchmark
+# Keep the legacy task
+function run_matmul_task(args)
+    n = get(args, "size", 10000)
+    return run_gpu(MatMulAlg(), n)
+end
+
 register_benchmark(
     "matmul", 
     "Standard Float32 matrix multiplication benchmark", 
-    run_matmul
+    run_matmul_task
 )
+
+register_algorithm("matmul", MatMulAlg())
 
 end # module

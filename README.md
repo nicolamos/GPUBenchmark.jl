@@ -1,5 +1,9 @@
 # GPUBenchmark.jl 🚀
 
+[![Build Status](https://github.com/nicolamos/GPUBenchmark.jl/actions/workflows/CI.yml/badge.svg)](https://github.com/nicolamos/GPUBenchmark.jl/actions/workflows/CI.yml)
+[![Docs](https://img.shields.io/badge/docs-latest-blue.svg)](https://nicolamos.github.io/GPUBenchmark.jl/dev/)
+[![Code Coverage](https://codecov.io/gh/nicolamos/GPUBenchmark.jl/branch/main/graph/badge.svg)](https://codecov.io/gh/nicolamos/GPUBenchmark.jl)
+
 A standalone Julia GPU benchmarking suite designed for **HPC node validation and burn-in**.
 
 This tool verifies that a freshly provisioned GPU node is stable under load and measures its compute performance. It uses a **plugin-based architecture** via Julia extensions to keep the core lightweight while offering powerful telemetry and stress-testing capabilities.

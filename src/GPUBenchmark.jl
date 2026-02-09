@@ -2,289 +2,44 @@ module GPUBenchmark
 
 using CUDA
 using JSON
-using ArgParse
 using Dates
 using Printf
-using InteractiveUtils
-using Statistics
 using Logging
 using LoggingExtras
 
-# --- Registry System ---
-
-struct BenchmarkTask
-    name::String
-    description::String
-    run_func::Function
-end
-
-const REGISTRY = Dict{String, BenchmarkTask}()
-
-"""
-    register_benchmark(name, description, run_func)
-
-Register a new benchmark task in the global registry.
-"""
-function register_benchmark(name::String, description::String, run_func::Function)
-    REGISTRY[name] = BenchmarkTask(name, description, run_func)
-end
-
-export register_benchmark
-
-# --- CLI Handling ---
-
-function parse_commandline(args)
-    s = ArgParseSettings(
-        description = "Julia GPU Benchmark Suite - Production Health Check",
-        autofix_names = true, # Automatically converts dashes to underscores
-        version = string(pkgversion(@__MODULE__)),
-        add_version = true
-    )
-
-    @add_arg_table! s begin
-        "--list", "-l"
-            help = "List available benchmarks and exit"
-            action = :store_true
-        "--size", "-s"
-            help = "Global matrix size (N). If 0, auto-scales to ~40% VRAM."
-            arg_type = Int
-            default = 0
-        "--duration", "-d"
-            help = "Stress test duration (seconds)."
-            arg_type = Int
-            default = 30
-        "--fraction", "-f"
-            help = "Target VRAM usage fraction for auto-sizing."
-            arg_type = Float64
-            default = 0.4
-        "--output-dir", "-o"
-            help = "Root directory for results."
-            arg_type = String
-            default = "results"
-        "--verbose", "-v"
-            help = "Enable debug logging."
-            action = :store_true
-        "--quiet", "-q"
-            help = "Suppress terminal dashboard (useful for batch/ansible)."
-            action = :store_true
-        "--show-latest"
-            help = "Show the dashboard for the latest benchmark run and exit."
-            action = :store_true
-        "--show", "-S"
-            help = "Show the dashboard for a specific run path and exit."
-            arg_type = String
-        "benchmarks"
-            help = "Tasks: sysinfo (default), matmul, gpuinspector, all."
-            nargs = '*'
-            default = ["sysinfo"]
-    end
-
-    # Parse as symbols and convert to NamedTuple for idiomatic access
-    parsed = parse_args(args, s, as_symbols=true)
-    isnothing(parsed) && return nothing
-    return NamedTuple(parsed)
-end
-
-function list_benchmarks()
-    println("\n📋 Registered Benchmark Tasks:")
-    println("-"^40)
-    for (name, task) in sort(collect(REGISTRY), by=x->x[1])
-        @printf("  %-15s : %s\n", name, task.description)
-    end
-    println("-"^40)
-end
-
-function calculate_reasonable_size(fraction=0.4)
-    if !CUDA.functional()
-        @warn "CUDA not functional, defaulting to minimal size."
-        return 2048
-    end
-
-    free_mem = CUDA.available_memory()
-    # N = sqrt( (free_mem * fraction) / (3 matrices * 4 bytes per Float32) )
-    N = isqrt(Int(floor((free_mem * fraction) / 12)))
-    
-    # Align to 128 for Tensor Core performance
-    N = div(N, 128) * 128
-    N = max(2048, N)
-    
-    @info "STEP: Auto-calculating matrix size..." 
-    @info "  - VRAM Free: $(Base.format_bytes(free_mem))"
-    @info "  - Target:    $(round(fraction*100))% usage"
-    @info "  - Result:    N = $N"
-    
-    return N
-end
+include("Core.jl")
+using .Core
 
 include("visuals.jl")
 using .Visuals
 
-"""
-    show_latest(output_dir="results")
+include("Reporting.jl")
+using .Reporting
 
-Convenience helper to show the most recent benchmark run.
-"""
-function show_latest(output_dir="results")
-    if !isdir(output_dir)
-        @warn "Output directory '$output_dir' not found. Use -o/--output-dir to specify the root results directory."
-        return
-    end
-    
-    # Find hostname subdirectories
-    host_dirs = filter(isdir, [joinpath(output_dir, d) for d in readdir(output_dir)])
-    if isempty(host_dirs)
-        @warn "No benchmark results found in '$output_dir'."
-        return
-    end
-    
-    # Find all timestamped runs
-    all_runs = String[]
-    for hdir in host_dirs
-        append!(all_runs, filter(isdir, [joinpath(hdir, d) for d in readdir(hdir)]))
-    end
-    
-    if isempty(all_runs)
-        @warn "No timestamped benchmark runs found in '$output_dir'."
-        return
-    end
-    
-    # Sort by folder name (timestamped)
-    latest_run = sort(all_runs)[end]
-    Base.invokelatest(show_results, latest_run)
-end
+include("Engine.jl")
+using .Engine
 
-function generate_text_report(results, output_dir)
-    filename = joinpath(output_dir, "summary.txt")
-    open(filename, "w") do io
-        println(io, "================================================================")
-        println(io, "             GPU HEALTH CERTIFICATE - $(results["timestamp"])")
-        println(io, "================================================================")
-        println(io, "")
-        println(io, "[1. NODE ENVIRONMENT]")
-        println(io, "  Hostname:      $(results["metadata"]["hostname"])")
-        println(io, "  Julia:         v$(VERSION)")
-        if results["cuda_functional"]
-            println(io, "  CUDA Runtime:  $(results["metadata"]["cuda_runtime"])")
-            println(io, "  CUDA Driver:   $(results["metadata"]["cuda_driver"])")
-        else
-            println(io, "  CUDA:          ⚠️ NOT FUNCTIONAL")
-        end
-        
-        println(io, "")
-        println(io, "[2. HARDWARE CAPABILITY]")
-        if haskey(results["benchmarks"], "sysinfo")
-            si = results["benchmarks"]["sysinfo"]
-            if !haskey(si, "error")
-                println(io, "  GPU Model:     $(si["gpu_name"])")
-                println(io, "  Compute Cap:   $(si["compute_capability"])")
-                println(io, "  Total VRAM:    $(si["vram_total"])")
-                println(io, "  PCI UUID:      $(si["pci_bus_id"])")
-            else
-                println(io, "  Status:        ⚠️ Failed to collect capability info.")
-            end
-        end
+include("CLI.jl")
+using .CLI
 
-        println(io, "")
-        println(io, "[3. PERFORMANCE RESULTS]")
-        
-        if haskey(results["benchmarks"], "matmul")
-            m = results["benchmarks"]["matmul"]
-            if !haskey(m, "error")
-                @printf(io, "  Raw Compute:   %.2f TFLOPS (FP32)\n", m["tflops"])
-                @printf(io, "  Matrix Size:   %d x %d\n", m["matrix_size"], m["matrix_size"])
-            end
-        end
+# Re-export public API
+export register_benchmark, register_algorithm, AbstractAlgorithm, run_cpu, run_gpu
 
-        if haskey(results["benchmarks"], "tensorcore")
-            t = results["benchmarks"]["tensorcore"]
-            if !haskey(t, "error")
-                @printf(io, "  Tensor Cores:  %.2f TFLOPS (Mixed Prec)\n", t["tflops"])
-            end
-        end
-
-        if haskey(results["benchmarks"], "gpuinspector")
-            r = results["benchmarks"]["gpuinspector"]
-            if !haskey(r, "error")
-                if haskey(r, "memory_bandwidth")
-                    @printf(io, "  Memory BW:     %.2f GiB/s\n", r["memory_bandwidth"])
-                end
-                
-                if haskey(r, "_raw_monitoring")
-                    mon = r["_raw_monitoring"]
-                    if haskey(mon.results, :power)
-                        all_p = reduce(vcat, mon.results[:power])
-                        @printf(io, "  Peak Power:    %.1f W (Avg: %.1f W)\n", maximum(all_p), mean(all_p))
-                    end
-                    if haskey(mon.results, :temperature)
-                        all_t = reduce(vcat, mon.results[:temperature])
-                        @printf(io, "  Peak Temp:     %d °C\n", Int(maximum(all_t)))
-                    end
-                end
-            end
-        end
-        println(io, "")
-        println(io, "================================================================")
-        println(io, "Generated by GPUBenchmark.jl Suite")
-    end
-end
-
-function discover_benchmarks()
-    bench_dir = joinpath(@__DIR__, "benchmarks")
-    if isdir(bench_dir)
-        files = filter(f -> endswith(f, ".jl"), readdir(bench_dir))
-        for file in files
-            try
-                include(joinpath(bench_dir, file))
-            catch e
-                @error "Failed to load benchmark module: $file" exception=e
-            end
-        end
-    end
-end
-
-# Stubs for extension methods
+# Stubs for extension methods (overridden by extensions)
 function save_plots(args...) end
 function cleanup(args...) end
 
-"""
-    load_extension_dependencies(to_run)
-
-Forcing the loading of packages that trigger Pkg extensions.
-"""
-function load_extension_dependencies(parsed_args)
-    to_run = parsed_args.benchmarks
-    # 1. Extensions for stress testing and telemetry
-    needs_gpuinspector = "all" in to_run || 
-                         "gpuinspector" in to_run || 
-                         parsed_args.show_latest || 
-                         !isnothing(parsed_args.show)
-    
-    if needs_gpuinspector
-        if !parsed_args.quiet
-            @info "STEP: Loading extension dependencies (GPUInspector, CairoMakie)..."
-        end
-        try
-            Base.eval(Main, :(using GPUInspector))
-            Base.eval(Main, :(using CairoMakie))
-        catch e
-            if !parsed_args.quiet
-                @warn "Could not load extension dependencies. Telemetry and plots will be limited."
-            end
-        end
-    end
-end
-
-# --- Entry Points ---
+# --- Main Entry Point ---
 
 function (@main)(ARGS)
-    # 1. Discover static benchmarks
-    discover_benchmarks()
-    
-    # 2. Parse initial command line to see what's requested
+    # 1. Parse command line
     parsed_args = parse_commandline(ARGS)
     isnothing(parsed_args) && return 0
 
-    # 3. Load extensions BEFORE executing anything
+    # 2. Discovery
+    discover_benchmarks(parsed_args.plugin)
+    
+    # 3. Extensions
     load_extension_dependencies(parsed_args)
 
     if parsed_args.list
@@ -346,27 +101,22 @@ function (@main)(ARGS)
         # 7. EXECUTION
         to_run = parsed_args.benchmarks
         if "all" in to_run
-            # Now that extensions are loaded, collect all keys from registry
-            # We explicitly include "gpuinspector" if not yet registered but requested
             to_run = union(collect(keys(REGISTRY)), ["gpuinspector"])
-            
-            # Filter out tensorcore if not supported by hardware
             if CUDA.functional() && capability(CUDA.device()) < v"7.0"
                 to_run = filter(x -> x != "tensorcore", to_run)
             end
         end
 
         for name in to_run
-            # Use invokelatest to ensure we see tasks registered by extensions in this world age
             if Base.invokelatest(haskey, REGISTRY, name)
                 @info "STEP: Running task '$name'..."
                 try
-                    # Pass a dictionary with string keys for the benchmark tasks to maintain compatibility
+                    # Legacy tasks expect a Dict of string keys
                     task_args = Dict(string(k) => v for (k, v) in pairs(parsed_args))
                     task_args["size"] = size 
                     
                     results["benchmarks"][name] = Base.invokelatest(REGISTRY[name].run_func, task_args)
-                    # Inline Summary
+                    
                     if name == "matmul" && !haskey(results["benchmarks"][name], "error")
                         @info "  - Result: $(round(results["benchmarks"][name]["tflops"], digits=2)) TFLOPS"
                     end
@@ -384,18 +134,27 @@ function (@main)(ARGS)
         @info "STEP: Finalizing reports..."
         try
             Base.invokelatest(cleanup)
+            
+            if haskey(results["benchmarks"], "scaling")
+                scaling_raw = results["benchmarks"]["scaling"]
+                export_scaling_dat(scaling_raw, run_dir)
+                
+                results["benchmarks"]["scaling"] = Dict(
+                    "algorithm" => scaling_raw["algorithm"],
+                    "peak_cpu_tflops" => maximum(r -> r["tflops"], scaling_raw["cpu_results"]),
+                    "peak_gpu_tflops" => maximum([maximum(r -> r["tflops"], runs) for (_, runs) in scaling_raw["gpu_results"]])
+                )
+            end
+
             open(joinpath(run_dir, "metrics.json"), "w") do f JSON.print(f, results, 4) end
             generate_text_report(results, run_dir)
-            # Extension-provided method
             Base.invokelatest(save_plots, results, run_dir)
             @info "✅ All reports saved successfully."
             
-            # 9. CLI DASHBOARD
             if !parsed_args.quiet
                 println("\n")
                 Base.invokelatest(Visuals.show_results, run_dir)
             end
-            
         catch e
             @error "Failed to save final reports" exception=e
         end
@@ -407,7 +166,7 @@ function (@main)(ARGS)
     return 0
 end
 
-# Backward compatibility for julia -m GPUBenchmark
+# Backward compatibility
 function main()
     (@main)(ARGS)
 end

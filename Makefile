@@ -1,11 +1,7 @@
-.PHONY: test docs clean coverage install
+.PHONY: test docs clean coverage
 
 # Default: run tests
 all: test
-
-# Install/Setup the recommended shared HPC environment (@gpu-test)
-install:
-	julia -e 'using Pkg; Pkg.activate("--shared", "gpu-test"); Pkg.add(url="https://github.com/nicolamos/GPUBenchmark.jl"); Pkg.add(["GPUInspector", "CairoMakie"])'
 
 # Run the standard test suite (Registry-compliant way)
 test:

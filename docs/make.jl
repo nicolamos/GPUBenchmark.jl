@@ -4,7 +4,7 @@ using GPUBenchmark
 makedocs(
     sitename = "GPUBenchmark.jl",
     format = Documenter.HTML(),
-    modules = [GPUBenchmark],
+    modules = [GPUBenchmark, GPUBenchmark.Core],
     pages = [
         "Home" => "index.md",
         "Advanced Benchmarking" => "advanced.md",

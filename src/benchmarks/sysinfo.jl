@@ -1,11 +1,13 @@
-using ..GPUBenchmark.Core: register_benchmark
+module SysInfo
+
+using ..Core: register_benchmark
 using CUDA
 
 function run_sysinfo(args)
     @info "Collecting System Information..."
-    
+
     results = Dict{String, Any}()
-    
+
     if CUDA.functional()
         dev = CUDA.device()
         results["gpu_name"] = CUDA.name(dev)
@@ -14,7 +16,7 @@ function run_sysinfo(args)
         results["vram_free"] = Base.format_bytes(Int(CUDA.available_memory()))
         results["pci_bus_id"] = string(CUDA.uuid(dev))
     end
-    
+
     return results
 end
 
@@ -23,3 +25,5 @@ register_benchmark(
     "Display system and GPU hardware information without running benchmarks",
     run_sysinfo
 )
+
+end # module

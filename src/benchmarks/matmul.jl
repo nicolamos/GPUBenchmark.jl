@@ -3,8 +3,8 @@ module MatMul
 using CUDA
 using BenchmarkTools
 using LinearAlgebra
-import ..GPUBenchmark.Core: run_cpu, run_gpu
-using ..GPUBenchmark.Core: register_benchmark, register_algorithm, AbstractAlgorithm
+import ..Core: run_cpu, run_gpu
+using ..Core: register_benchmark, register_algorithm, AbstractAlgorithm
 
 struct MatMulAlg <: AbstractAlgorithm end
 

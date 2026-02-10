@@ -8,13 +8,6 @@ using Test
 using JSON
 using Dates
 
-# Include Scaling module to test its run function
-include("../src/benchmarks/scaling.jl")
-using .Scaling
-
-# Include sysinfo
-include("../src/benchmarks/sysinfo.jl")
-
 @testset "GPUBenchmark.jl" begin
 
     @testset "Core Registry" begin
@@ -89,7 +82,7 @@ include("../src/benchmarks/sysinfo.jl")
         )
         
         # Call run_scaling with the mock hardware
-        results = Scaling.run_scaling(args; hardware=MockHardware())
+        results = GPUBenchmark.Scaling.run_scaling(args; hardware=MockHardware())
         
         @test results["algorithm"] == "mock_run"
         @test length(results["cpu_results"]) == 1

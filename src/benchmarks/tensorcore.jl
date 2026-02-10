@@ -1,8 +1,8 @@
 module TensorCore
 
 using CUDA
-import ..GPUBenchmark.Core: run_cpu, run_gpu
-using ..GPUBenchmark.Core: register_benchmark, register_algorithm, AbstractAlgorithm
+import ..Core: run_cpu, run_gpu
+using ..Core: register_benchmark, register_algorithm, AbstractAlgorithm
 
 struct TensorCoreAlg <: AbstractAlgorithm end
 

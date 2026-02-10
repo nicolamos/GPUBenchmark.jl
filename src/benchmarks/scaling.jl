@@ -1,7 +1,7 @@
 module Scaling
 
-using ..GPUBenchmark.Core: register_benchmark, ALGORITHM_REGISTRY, run_cpu, run_gpu, AbstractHardware, CUDAHardware, get_devices, set_device!
-using ..GPUBenchmark.Engine: calculate_scaling_sizes
+using ..Core: register_benchmark, ALGORITHM_REGISTRY, run_cpu, run_gpu, AbstractHardware, CUDAHardware, get_devices, set_device!
+using ..Engine: calculate_scaling_sizes
 
 function run_scaling(args; hardware::AbstractHardware = CUDAHardware())
     alg_name = get(args, "algorithm", "matmul")

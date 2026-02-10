@@ -33,22 +33,10 @@ function calculate_scaling_sizes(fraction=0.6)
 end
 
 function discover_benchmarks(plugin_arg=nothing)
-    # 1. Load built-in benchmarks
-    # We use @__DIR__ to find the benchmarks folder relative to this file
-    bench_dir = joinpath(@__DIR__, "benchmarks")
-    if isdir(bench_dir)
-        for file in filter(f -> endswith(f, ".jl"), readdir(bench_dir))
-            try
-                # We need to include in the context of the parent module usually
-                # but for simplicity and since they register themselves globally:
-                Base.include(Main, joinpath(bench_dir, file))
-            catch e
-                @error "Failed to load internal benchmark: $file" exception=e
-            end
-        end
-    end
+    # Built-in benchmarks are statically included in GPUBenchmark.jl (precompiled).
+    # This function only handles external plugin discovery.
 
-    # 2. Hybrid Plugin Discovery (LOAD_PATH + Module Import)
+    # 1. Hybrid Plugin Discovery (LOAD_PATH + Module Import)
     local_plugins = abspath("plugins")
     if isdir(local_plugins)
         @info "STEP: Scanning local plugins/ directory..."
@@ -66,7 +54,7 @@ function discover_benchmarks(plugin_arg=nothing)
         end
     end
 
-    # 3. Explicit Plugin Loading (via --plugin flag)
+    # 2. Explicit Plugin Loading (via --plugin flag)
     if !isnothing(plugin_arg)
         if isfile(plugin_arg)
             @warn "Loading plugin via file path is deprecated. Prefer placing modules in 'plugins/'."

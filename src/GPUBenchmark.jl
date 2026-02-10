@@ -10,7 +10,7 @@ using LoggingExtras
 include("Core.jl")
 using .Core
 
-include("visuals.jl")
+include("Visuals.jl")
 using .Visuals
 
 include("Reporting.jl")
@@ -38,7 +38,7 @@ function (@main)(ARGS)
 
     # 2. Discovery
     discover_benchmarks(parsed_args.plugin)
-    
+
     # 3. Extensions
     load_extension_dependencies(parsed_args)
 
@@ -56,7 +56,7 @@ function (@main)(ARGS)
         Base.invokelatest(Visuals.show_results, parsed_args.show)
         return 0
     end
-    
+
     # 4. SETUP OUTPUT
     timestamp = Dates.format(now(), "yyyy-mm-dd_HHMMSS")
     full_hostname = get(ENV, "HOSTNAME", get(ENV, "COMPUTERNAME", "localhost"))
@@ -76,7 +76,7 @@ function (@main)(ARGS)
     )
 
     with_logger(tee_logger) do
-        @info "🚀 GPU BENCHMARK SUITE STARTING" 
+        @info "🚀 GPU BENCHMARK SUITE STARTING"
         @info "  - Node:      $hostname"
         @info "  - Time:      $timestamp"
         @info "  - Artifacts: $run_dir"
@@ -113,10 +113,10 @@ function (@main)(ARGS)
                 try
                     # Legacy tasks expect a Dict of string keys
                     task_args = Dict(string(k) => v for (k, v) in pairs(parsed_args))
-                    task_args["size"] = size 
-                    
+                    task_args["size"] = size
+
                     results["benchmarks"][name] = Base.invokelatest(REGISTRY[name].run_func, task_args)
-                    
+
                     if name == "matmul" && !haskey(results["benchmarks"][name], "error")
                         @info "  - Result: $(round(results["benchmarks"][name]["tflops"], digits=2)) TFLOPS"
                     end
@@ -134,11 +134,11 @@ function (@main)(ARGS)
         @info "STEP: Finalizing reports..."
         try
             Base.invokelatest(cleanup)
-            
+
             if haskey(results["benchmarks"], "scaling")
                 scaling_raw = results["benchmarks"]["scaling"]
                 export_scaling_dat(scaling_raw, run_dir)
-                
+
                 results["benchmarks"]["scaling"] = Dict(
                     "algorithm" => scaling_raw["algorithm"],
                     "peak_cpu_tflops" => maximum(r -> r["tflops"], scaling_raw["cpu_results"]),
@@ -150,7 +150,7 @@ function (@main)(ARGS)
             generate_text_report(results, run_dir)
             Base.invokelatest(save_plots, results, run_dir)
             @info "✅ All reports saved successfully."
-            
+
             if !parsed_args.quiet
                 println("\n")
                 Base.invokelatest(Visuals.show_results, run_dir)
@@ -158,7 +158,7 @@ function (@main)(ARGS)
         catch e
             @error "Failed to save final reports" exception=e
         end
-        
+
         println("-"^60)
         @info "🚀 BENCHMARK COMPLETE"
     end

@@ -1,5 +1,7 @@
 module Core
 
+using CUDA
+
 export AbstractAlgorithm, BenchmarkTask, REGISTRY, ALGORITHM_REGISTRY
 export register_benchmark, register_algorithm, run_cpu, run_gpu
 export AbstractHardware, CUDAHardware, get_devices, set_device!
@@ -17,10 +19,8 @@ struct CUDAHardware <: AbstractHardware end
 Return a list of available device IDs.
 """
 function get_devices(::CUDAHardware)
-    # Lazy load CUDA check to avoid overhead if not used
-    Base.get_extension(parentmodule(Core), :CUDA) # This is just a hint
-    if Main.CUDA.functional()
-        return collect(0:length(Main.CUDA.devices())-1)
+    if CUDA.functional()
+        return collect(0:length(CUDA.devices())-1)
     else
         return Int[]
     end
@@ -31,7 +31,7 @@ end
 Switch context to the specified device.
 """
 function set_device!(::CUDAHardware, id::Int)
-    Main.CUDA.device!(id)
+    CUDA.device!(id)
 end
 
 # --- Algorithm Interface ---

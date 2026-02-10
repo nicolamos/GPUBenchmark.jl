@@ -149,7 +149,7 @@ function (@main)(ARGS)
         try
             Base.invokelatest(cleanup)
 
-            if haskey(results["benchmarks"], "scaling")
+            if haskey(results["benchmarks"], "scaling") && !haskey(results["benchmarks"]["scaling"], "error")
                 scaling_raw = results["benchmarks"]["scaling"]
                 export_scaling_dat(scaling_raw, run_dir)
 

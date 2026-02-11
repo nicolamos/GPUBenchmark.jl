@@ -104,6 +104,20 @@ function _save_scaling_plot(dat, output_path, format)
         i += 1
     end
 
+    # Mean trend line across all GPU devices (when >1)
+    if length(dat.gpu_data) > 1
+        n_vals = Dict{Int, Vector{Float64}}()
+        for (_, (ns, ts)) in dat.gpu_data
+            for (n, t) in zip(ns, ts)
+                push!(get!(n_vals, n, Float64[]), t)
+            end
+        end
+        mean_ns = sort(collect(keys(n_vals)))
+        mean_ts = [mean(n_vals[n]) for n in mean_ns]
+        lines!(ax, mean_ns, mean_ts;
+            label="mean", color=:black, linestyle=:dot, linewidth=2)
+    end
+
     if !isempty(dat.cpu_ns)
         ord = sortperm(dat.cpu_ns)
         scatterlines!(ax, dat.cpu_ns[ord], dat.cpu_tflops[ord];

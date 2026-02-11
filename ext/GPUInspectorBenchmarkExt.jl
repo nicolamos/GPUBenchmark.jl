@@ -6,12 +6,11 @@ using CairoMakie
 using CUDA
 using JSON
 using Statistics: mean
-using UnicodePlots: BrailleCanvas, lineplot
+using Printf
 
 function run_gpuinspector(args)
     @info "Running GPUInspector deep inspection on ALL available GPUs..."
-    
-    # Check for available GPUs
+
     devs = CUDA.devices()
     if isempty(devs)
         error("No CUDA-capable GPUs found.")
@@ -19,35 +18,26 @@ function run_gpuinspector(args)
     @info "Detected $(length(devs)) GPUs: $(join([CUDA.name(d) for d in devs], ", "))"
 
     results = Dict{String, Any}()
-    
-    # 1. Bandwidth
+
     @info "Measuring Memory Bandwidth (max across devices)..."
-    # memory_bandwidth() usually targets current device, we can loop if needed
-    # but for a summary, let's keep the existing call or expand it
     results["memory_bandwidth"] = memory_bandwidth()
-    
-    # 2. Parallel Stress Test with Monitoring
+
     duration = args["duration"]
     size = args["size"]
     @info "Running $(duration)s Parallel Stress Test (size=$size) with telemetry..."
-    
-    # We use the high-level stresstest which supports parallel and monitoring
-    # This internally calls monitoring_start and monitoring_stop
-    mon_results = stresstest(; 
-        devices=devs, 
-        duration=duration, 
-        size=size, 
-        monitoring=true, 
-        parallel=true, 
+
+    mon_results = stresstest(;
+        devices=devs,
+        duration=duration,
+        size=size,
+        monitoring=true,
+        parallel=true,
         verbose=true
     )
-    
-    # Store only summary/metadata in JSON to avoid redundancy with HDF5
+
     results["monitoring_file"] = "telemetry.h5"
-    
-    # Attach raw object for save_plots
     results["_raw_monitoring"] = mon_results
-    
+
     return results
 end
 
@@ -56,8 +46,7 @@ function GPUBenchmark.save_plots(results, output_path)
         g_res = results["benchmarks"]["gpuinspector"]
         if haskey(g_res, "_raw_monitoring")
             mon_results = g_res["_raw_monitoring"]
-            
-            # Save raw HDF5 telemetry (the source of truth)
+
             h5_file = joinpath(output_path, "telemetry.h5")
             @info "Saving raw telemetry to $h5_file"
             try
@@ -65,8 +54,7 @@ function GPUBenchmark.save_plots(results, output_path)
             catch e
                 @error "Failed to save HDF5 telemetry" exception=e
             end
-            
-            # Save Plots (Tiled Dashboard Image)
+
             plot_file = joinpath(output_path, "dashboard.png")
             @info "Saving dashboard to $plot_file"
             try
@@ -76,12 +64,51 @@ function GPUBenchmark.save_plots(results, output_path)
             end
         end
     end
+
+    # Scaling SVG (read from scaling.dat, same source as terminal plot)
+    dat_path = joinpath(output_path, "scaling.dat")
+    if isfile(dat_path)
+        try
+            dat = GPUBenchmark.Visuals.parse_scaling_dat(dat_path)
+            _save_scaling_svg(dat, output_path)
+        catch e
+            @error "Failed to save scaling plot" exception=e
+        end
+    end
+end
+
+function _save_scaling_svg(dat, output_path)
+    if isempty(dat.cpu_ns) && isempty(dat.gpu_data)
+        return
+    end
+
+    fig = Figure(size=(800, 500))
+    ax = Axis(fig[1, 1],
+        title  = "Scaling: $(dat.alg)",
+        xlabel = "Matrix Size N",
+        ylabel = "TFLOPS")
+
+    for (dev_id, (ns, ts)) in dat.gpu_data
+        isempty(ns) && continue
+        ord = sortperm(ns)
+        lines!(ax, ns[ord], ts[ord]; label="GPU $dev_id")
+    end
+
+    if !isempty(dat.cpu_ns)
+        ord = sortperm(dat.cpu_ns)
+        lines!(ax, dat.cpu_ns[ord], dat.cpu_tflops[ord];
+            label="CPU", linestyle=:dash, color=:gray)
+    end
+
+    axislegend(ax)
+    svg_path = joinpath(output_path, "scaling_plot.svg")
+    save(svg_path, fig)
+    @info "Scaling plot saved to $svg_path"
 end
 
 function GPUBenchmark.cleanup()
     @info "Cleaning up GPU memory..."
     try
-        # Use GPUInspector's multi-GPU memory clearing (calls CUDA.reclaim internally)
         clear_all_gpus_memory()
     catch e
         @warn "Cleanup encountered an issue" exception=e
@@ -90,80 +117,52 @@ end
 
 function _render_telemetry_gpuinspector(bench_data, run_path)
     h5_file = joinpath(run_path, "telemetry.h5")
-    if !isfile(h5_file)
-        return ""
-    end
+    !isfile(h5_file) && return
 
     try
-        # 1. Load from HDF5 (source of truth)
         res = load_monitoring_results(h5_file)
-        
-        plot_strings = String[]
-        
-        # Helper for smoothing
+
         function smooth_and_resample(data, target_points=80)
-            if length(data) <= target_points return Float64.(data) end
+            length(data) <= target_points && return Float64.(data)
             window = max(2, length(data) ÷ target_points)
             smoothed = [sum(data[i:min(i+window-1, end)]) / length(data[i:min(i+window-1, end)]) for i in 1:length(data)]
             return smoothed[round.(Int, range(1, length(smoothed), length=target_points))]
         end
 
-        # Order: Power, Compute, Mem, Temp
         requested_symbols = [:power, :compute, :mem, :temperature]
         titles = Dict(
-            :power => "Power (W)",
-            :compute => "Compute Util (%)",
-            :mem => "Memory Util (%)",
+            :power       => "Power (W)",
+            :compute     => "Compute Util (%)",
+            :mem         => "Memory Util (%)",
             :temperature => "Temperature (°C)"
         )
-        ylims = Dict(
-            :compute => (0, 100),
-            :mem => (0, 100)
-        )
+        ylims = Dict(:compute => (0, 100), :mem => (0, 100))
 
+        println("\n  Node Telemetry Summary (from HDF5):")
         for s in requested_symbols
-            if haskey(res.results, s)
-                data = res.results[s]
-                num_gpus = length(res.devices)
-                
-                # Aggregate for Global Trend (requested by user)
-                history_len = length(data[1])
-                aggregated = [mean([data[gpu][t] for gpu in 1:num_gpus]) for t in 1:history_len]
-                vals = smooth_and_resample(aggregated)
-                
-                # Create plot
-                p = lineplot(vals, 
-                    title=titles[s], 
-                    color=:cyan, 
-                    width=65, height=10, 
-                    border=:solid, canvas=BrailleCanvas,
-                    xlabel="", ylabel=""
-                )
-                if haskey(ylims, s)
-                    p = lineplot(vals, 
-                        title=titles[s], color=:cyan, width=65, height=10, 
-                        border=:solid, canvas=BrailleCanvas,
-                        xlabel="", ylabel="", ylim=ylims[s]
-                    )
-                end
+            !haskey(res.results, s) && continue
+            data = res.results[s]
+            num_gpus = length(res.devices)
 
-                # Global Stats
-                all_vals = reduce(vcat, data)
-                stats = "{dim}  Global Max: $(round(maximum(all_vals), digits=1))  |  Global Avg: $(round(mean(all_vals), digits=1))  |  Devices: $num_gpus{/dim}"
-                
-                push!(plot_strings, string(p) * "\n" * stats)
-            end
+            history_len = length(data[1])
+            aggregated = [mean([data[gpu][t] for gpu in 1:num_gpus]) for t in 1:history_len]
+            vals = smooth_and_resample(aggregated)
+
+            GPUBenchmark.Visuals.render_lineplot(1:length(vals), vals;
+                title=titles[s], color=:cyan, width=65, height=10,
+                ylim=get(ylims, s, nothing))
+
+            all_vals = reduce(vcat, data)
+            @printf("  Global Max: %.1f  |  Global Avg: %.1f  |  Devices: %d\n",
+                maximum(all_vals), mean(all_vals), num_gpus)
         end
 
-        return "{bold}Node Telemetry Summary (from HDF5):{/bold}\n" * join(plot_strings, "\n\n")
-
     catch e
-        return "{red}Failed to load telemetry from HDF5: $e{/red}"
+        println("  Failed to load telemetry from HDF5: $e")
     end
 end
 
 function __init__()
-    # Register the telemetry renderer
     GPUBenchmark.Visuals.TELEMETRY_RENDERER[] = _render_telemetry_gpuinspector
 
     GPUBenchmark.register_benchmark(

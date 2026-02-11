@@ -5,6 +5,7 @@ using PrettyTables
 using UnicodePlots
 using JSON
 using Printf
+using Statistics: mean
 
 export show_results, render_lineplot, parse_scaling_dat
 
@@ -62,24 +63,74 @@ function parse_scaling_dat(dat_path)
     return (alg=alg, cpu_ns=cpu_ns, cpu_tflops=cpu_tflops, gpu_data=gpu_data)
 end
 
+const _GPU_COLORS = [:green, :red, :cyan, :magenta, :yellow]
+
+function _aggregate_per_n(gpu_data)
+    n_vals = Dict{Int, Vector{Float64}}()
+    for (_, (ns, ts)) in gpu_data
+        for (n, t) in zip(ns, ts)
+            push!(get!(n_vals, n, Float64[]), t)
+        end
+    end
+    return n_vals
+end
+
 function _render_scaling_plot(dat)
     if isempty(dat.cpu_ns) && isempty(dat.gpu_data)
         return
     end
+
+    num_devices = length(dat.gpu_data)
     println("\n  Scaling: $(dat.alg)")
-    # Collect all GPU points, take max per N for the terminal plot
+
     if !isempty(dat.gpu_data)
-        n_tflops = Dict{Int,Float64}()
-        for (_, (ns, ts)) in dat.gpu_data
-            for (n, t) in zip(ns, ts)
-                n_tflops[n] = max(get(n_tflops, n, 0.0), t)
+        n_vals = _aggregate_per_n(dat.gpu_data)
+        all_ns  = sort(collect(keys(n_vals)))
+        mean_ts = [mean(n_vals[n]) for n in all_ns]
+
+        if num_devices <= 4
+            # Individual line per device + mean trend
+            device_ids = sort(collect(keys(dat.gpu_data)))
+            id1 = device_ids[1]
+            ns1, ts1 = dat.gpu_data[id1]
+            ord = sortperm(ns1)
+            p = lineplot(ns1[ord], ts1[ord];
+                title="Scaling TFLOPS vs N ($(dat.alg))",
+                xlabel="N", ylabel="TFLOPS",
+                color=_GPU_COLORS[1], width=70, height=12,
+                name="GPU $id1")
+            for (i, id) in enumerate(device_ids[2:end])
+                ns_i, ts_i = dat.gpu_data[id]
+                ord_i = sortperm(ns_i)
+                lineplot!(p, ns_i[ord_i], ts_i[ord_i];
+                    color=_GPU_COLORS[mod1(i + 1, length(_GPU_COLORS))],
+                    name="GPU $id")
             end
+            if num_devices > 1
+                lineplot!(p, all_ns, mean_ts; color=:white, name="mean")
+            end
+        else
+            # Envelope: min / mean / max across all devices
+            max_ts = [maximum(n_vals[n]) for n in all_ns]
+            min_ts = [minimum(n_vals[n]) for n in all_ns]
+            p = lineplot(all_ns, max_ts;
+                title="Scaling TFLOPS vs N — $(num_devices) GPUs",
+                xlabel="N", ylabel="TFLOPS",
+                color=:cyan, width=70, height=12, name="max")
+            lineplot!(p, all_ns, mean_ts; color=:white, name="mean")
+            lineplot!(p, all_ns, min_ts;  color=:red,   name="min")
         end
-        ns = sort(collect(keys(n_tflops)))
-        ts = [n_tflops[n] for n in ns]
-        render_lineplot(ns, ts; title="GPU Scaling TFLOPS vs N", xlabel="N", ylabel="TFLOPS", color=:green)
-    end
-    if !isempty(dat.cpu_ns)
+
+        # CPU line on the same plot
+        if !isempty(dat.cpu_ns)
+            ord = sortperm(dat.cpu_ns)
+            lineplot!(p, dat.cpu_ns[ord], dat.cpu_tflops[ord]; color=:blue, name="CPU")
+        end
+
+        show(stdout, MIME"text/plain"(), p)
+        println()
+    elseif !isempty(dat.cpu_ns)
+        # CPU-only fallback
         ord = sortperm(dat.cpu_ns)
         render_lineplot(dat.cpu_ns[ord], dat.cpu_tflops[ord];
             title="CPU Scaling TFLOPS vs N", xlabel="N", ylabel="TFLOPS", color=:blue)

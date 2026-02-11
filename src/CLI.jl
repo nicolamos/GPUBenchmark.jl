@@ -70,7 +70,7 @@ function parse_commandline(args)
             help = "Show the dashboard for a specific run path and exit."
             arg_type = String
         "benchmarks"
-            help = "Tasks: sysinfo (default), matmul, scaling, all."
+            help = "Tasks: sysinfo, matmul, tensorcore, scaling, gpuinspector, all. Default: sysinfo."
             nargs = '*'
             default = ["sysinfo"]
     end

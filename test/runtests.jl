@@ -74,14 +74,10 @@ using Dates
         struct MockAlg <: AbstractAlgorithm end
         GPUBenchmark.Core.run_cpu(::MockAlg, n, threads) = Dict("tflops" => 1.0, "time_s" => 0.1, "threads" => threads)
         GPUBenchmark.Core.run_gpu(::MockAlg, n) = Dict("tflops" => 2.0, "time_s" => 0.05)
-        
-        register_algorithm("mock_run", MockAlg())
-        
-        # Define Mock Hardware for this test
-        struct MockHardware <: AbstractHardware end
-        GPUBenchmark.Core.get_devices(::MockHardware) = [0, 1]
-        GPUBenchmark.Core.set_device!(::MockHardware, id::Int) = nothing
 
+        register_algorithm("mock_run", MockAlg())
+
+        # Reuse MockHardware from "Engine & Hardware Mocking" testset (4 fake GPUs)
         args = Dict(
             "algorithm" => "mock_run",
             "sizes" => "1024",
@@ -89,13 +85,13 @@ using Dates
             "cpu_threads" => 1,
             "parallel" => false
         )
-        
+
         # Call run_scaling with the mock hardware
         results = GPUBenchmark.Scaling.run_scaling(args; hardware=MockHardware())
-        
+
         @test results["algorithm"] == "mock_run"
         @test length(results["cpu_results"]) == 1
-        @test length(results["gpu_results"]) == 2 # Should have results for both mock GPUs
+        @test length(results["gpu_results"]) == 4 # All 4 mock GPUs
         @test results["gpu_results"][0][1]["tflops"] == 2.0
     end
 

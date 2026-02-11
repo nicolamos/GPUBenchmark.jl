@@ -81,10 +81,12 @@ function (@main)(ARGS)
     # 5. CONFIGURE LOGGING
     log_file = joinpath(run_dir, "benchmark.log")
     min_level = parsed_args.verbose ? Logging.Debug : Logging.Info
+    log_io = open(log_file, "w")
+    try
     tee_logger = MinLevelLogger(
         TeeLogger(
             ConsoleLogger(stdout),
-            SimpleLogger(open(log_file, "w"))
+            SimpleLogger(log_io)
         ),
         min_level
     )
@@ -153,10 +155,15 @@ function (@main)(ARGS)
                 scaling_raw = results["benchmarks"]["scaling"]
                 export_scaling_dat(scaling_raw, run_dir)
 
+                cpu_res = scaling_raw["cpu_results"]
+                peak_cpu = isempty(cpu_res) ? 0.0 : maximum(r -> r["tflops"], cpu_res)
+                gpu_peaks = [maximum(r -> r["tflops"], runs) for (_, runs) in scaling_raw["gpu_results"] if !isempty(runs)]
+                peak_gpu = isempty(gpu_peaks) ? 0.0 : maximum(gpu_peaks)
+
                 results["benchmarks"]["scaling"] = Dict(
                     "algorithm" => scaling_raw["algorithm"],
-                    "peak_cpu_tflops" => maximum(r -> r["tflops"], scaling_raw["cpu_results"]),
-                    "peak_gpu_tflops" => maximum([maximum(r -> r["tflops"], runs) for (_, runs) in scaling_raw["gpu_results"]])
+                    "peak_cpu_tflops" => peak_cpu,
+                    "peak_gpu_tflops" => peak_gpu
                 )
             end
 
@@ -175,6 +182,10 @@ function (@main)(ARGS)
 
         println("-"^60)
         @info "🚀 BENCHMARK COMPLETE"
+    end
+
+    finally
+        close(log_io)
     end
 
     return 0

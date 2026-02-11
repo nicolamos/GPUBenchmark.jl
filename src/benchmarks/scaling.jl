@@ -52,15 +52,17 @@ function run_scaling(args; hardware::AbstractHardware = CUDAHardware())
             @info "  - Scaling GPU: n=$n (Parallel: $is_parallel)"
             
             if is_parallel
-                # Multi-GPU Parallel Probing
+                # Multi-GPU Parallel Probing — each @spawn gets its own task-local CUDA state
                 temp_results = Vector{Any}(nothing, length(dev_ids))
-                Threads.@threads for i in 1:length(dev_ids)
-                    id = dev_ids[i]
-                    set_device!(hardware, id)
-                    res = run_gpu(alg, n)
-                    res["n"] = n
-                    res["device_id"] = id
-                    temp_results[i] = res
+                @sync for i in 1:length(dev_ids)
+                    Threads.@spawn begin
+                        id = dev_ids[i]
+                        set_device!(hardware, id)
+                        res = run_gpu(alg, n)
+                        res["n"] = n
+                        res["device_id"] = id
+                        temp_results[i] = res
+                    end
                 end
                 for i in 1:length(dev_ids)
                     push!(results["gpu_results"][dev_ids[i]], temp_results[i])

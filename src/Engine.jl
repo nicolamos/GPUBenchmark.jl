@@ -14,15 +14,18 @@ function calculate_reasonable_size(fraction=0.4)
         return 2048
     end
 
-    free_mem = CUDA.available_memory()
-    # N = sqrt( (free_mem * fraction) / (3 matrices * 4 bytes per Float32) )
-    N = isqrt(Int(floor((free_mem * fraction) / 12)))
-    
+    gpu_mem = CUDA.available_memory()
+    sys_mem = Sys.free_memory()
+    mem = min(gpu_mem, sys_mem)
+
+    # N = sqrt( (mem * fraction) / (3 matrices * 4 bytes per Float32) )
+    N = isqrt(Int(floor((mem * fraction) / 12)))
+
     # Align to 128 for Tensor Core performance
     N = div(N, 128) * 128
     N = max(2048, N)
-    
-    @debug "Auto-calculating matrix size" vram_free=Base.format_bytes(free_mem) target_fraction=fraction result_n=N
+
+    @debug "Auto-calculating matrix size" vram_free=Base.format_bytes(gpu_mem) ram_free=Base.format_bytes(sys_mem) target_fraction=fraction result_n=N
     return N
 end
 

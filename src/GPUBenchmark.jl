@@ -6,7 +6,7 @@ using Dates
 using Printf
 using Logging
 using LoggingExtras
-using Term: NOCOLOR
+
 
 include("Core.jl")
 using .Core
@@ -35,13 +35,6 @@ export register_benchmark, register_algorithm, AbstractAlgorithm, run_cpu, run_g
 # Stubs for extension methods (overridden by extensions)
 function save_plots(args...) end
 function cleanup(args...) end
-
-function __init__()
-    # Disable Term.jl ANSI styling when stdout is not a TTY or NO_COLOR is set
-    if !isa(stdout, Base.TTY) || haskey(ENV, "NO_COLOR")
-        NOCOLOR[] = true
-    end
-end
 
 # --- Main Entry Point ---
 

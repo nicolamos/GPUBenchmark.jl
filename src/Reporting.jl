@@ -34,12 +34,32 @@ function generate_text_report(results, output_dir)
         if haskey(benchmarks, "sysinfo")
             si = benchmarks["sysinfo"]
             if !haskey(si, "error")
+                # CPU / System
+                if haskey(si, "cpu_model")
+                    println(io, "  CPU Model:     $(si["cpu_model"])")
+                end
+                if haskey(si, "cpu_arch")
+                    println(io, "  CPU Arch:      $(si["cpu_arch"])")
+                end
+                if haskey(si, "cpu_threads")
+                    println(io, "  CPU Threads:   $(si["cpu_threads"])")
+                end
+                if haskey(si, "ram_total")
+                    println(io, "  Total RAM:     $(si["ram_total"])")
+                end
+                # GPU
                 println(io, "  GPU Model:     $(get(si, "gpu_name", "unknown"))")
                 println(io, "  Compute Cap:   $(get(si, "compute_capability", "unknown"))")
                 println(io, "  Total VRAM:    $(get(si, "vram_total", "unknown"))")
-                println(io, "  PCI UUID:      $(get(si, "pci_bus_id", "unknown"))")
+                println(io, "  GPU UUID:      $(get(si, "gpu_uuid", "unknown"))")
+                if haskey(si, "pci_bus_id")
+                    println(io, "  PCI Bus ID:    $(si["pci_bus_id"])")
+                end
+                if haskey(si, "gpu_count") && si["gpu_count"] > 1
+                    println(io, "  GPU Count:     $(si["gpu_count"])")
+                end
             else
-                println(io, "  Status:        ⚠️ Failed to collect capability info.")
+                println(io, "  Status:        Failed to collect capability info.")
             end
         end
 

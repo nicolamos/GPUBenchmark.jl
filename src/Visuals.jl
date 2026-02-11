@@ -54,19 +54,47 @@ function show_results(path::String)
     
     if haskey(bench_data, "sysinfo")
         si = bench_data["sysinfo"]
-        add_row!("Hardware", si["gpu_name"], si["vram_total"])
+        if !haskey(si, "error")
+            gpu_name = get(si, "gpu_name", "N/A")
+            gpu_count = get(si, "gpu_count", 1)
+            if gpu_count > 1
+                gpu_name = "$(gpu_count)x $gpu_name"
+            end
+            add_row!("GPU", gpu_name, get(si, "vram_total", ""))
+            if haskey(si, "cpu_model")
+                add_row!("CPU", si["cpu_model"], "$(get(si, "cpu_threads", "?")) threads")
+            end
+            if haskey(si, "ram_total")
+                add_row!("System RAM", si["ram_total"], "Free: $(get(si, "ram_free", "?"))")
+            end
+        end
     end
-    
+
     if haskey(bench_data, "matmul")
         m = bench_data["matmul"]
-        add_row!("MatMul (FP32)", "$(round(m["tflops"], digits=2)) TFLOPS", "N=$(m["matrix_size"])")
+        if !haskey(m, "error")
+            detail = haskey(m, "matrix_size") ? "N=$(m["matrix_size"])" : ""
+            add_row!("MatMul (FP32)", "$(round(m["tflops"], digits=2)) TFLOPS", detail)
+        end
     end
 
     if haskey(bench_data, "tensorcore")
         t = bench_data["tensorcore"]
-        add_row!("TensorCore", "$(round(t["tflops"], digits=2)) TFLOPS", "Mixed Prec")
+        if !haskey(t, "error")
+            detail = haskey(t, "matrix_size") ? "N=$(t["matrix_size"]) Mixed Prec" : "Mixed Prec"
+            add_row!("TensorCore", "$(round(t["tflops"], digits=2)) TFLOPS", detail)
+        end
     end
-    
+
+    if haskey(bench_data, "scaling")
+        s = bench_data["scaling"]
+        if !haskey(s, "error")
+            peak_gpu = round(get(s, "peak_gpu_tflops", 0.0), digits=2)
+            peak_cpu = round(get(s, "peak_cpu_tflops", 0.0), digits=2)
+            add_row!("Scaling", "$peak_gpu TFLOPS (GPU peak)", "CPU: $peak_cpu")
+        end
+    end
+
     if haskey(bench_data, "gpuinspector")
         gi = bench_data["gpuinspector"]
         if haskey(gi, "memory_bandwidth")

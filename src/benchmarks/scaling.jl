@@ -78,16 +78,7 @@ function run_scaling(args; hardware::AbstractHardware = CUDAHardware())
         end
     end
     
-    # 4. Save Tabular .dat file
-    save_dat_file(results, args)
-    
     return results
-end
-
-function save_dat_file(results, args)
-    # This will be called later with the actual run_dir from GPUBenchmark
-    # For now, we return the data structure and handle file writing in the main loop if needed
-    # But we can assume we want to write it to the output-dir
 end
 
 register_benchmark(

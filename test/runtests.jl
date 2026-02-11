@@ -38,8 +38,17 @@ using Dates
                     "cuda_driver" => "N/A"
                 ),
                 "benchmarks" => Dict(
-                    "sysinfo" => Dict("gpu_name" => "Mock GPU", "vram_total" => "8GB"),
-                    "matmul" => Dict("tflops" => 5.0, "matrix_size" => 1024)
+                    "sysinfo" => Dict(
+                        "gpu_name" => "Mock GPU", "vram_total" => "8GB",
+                        "gpu_uuid" => "GPU-00000000", "gpu_count" => 1,
+                        "pci_bus_id" => "0000:01:00.0",
+                        "compute_capability" => "8.0",
+                        "cpu_model" => "Mock CPU @ 3.00GHz",
+                        "cpu_arch" => "mock", "cpu_threads" => 4,
+                        "ram_total" => "64 GiB", "ram_free" => "32 GiB"
+                    ),
+                    "matmul" => Dict("tflops" => 5.0, "matrix_size" => 1024),
+                    "scaling" => Dict("algorithm" => "matmul", "peak_gpu_tflops" => 10.0, "peak_cpu_tflops" => 1.0)
                 )
             )
             generate_text_report(results, dir)

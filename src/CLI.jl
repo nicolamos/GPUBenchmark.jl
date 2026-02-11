@@ -2,7 +2,7 @@ module CLI
 
 using ArgParse
 using Printf
-using Term: Table, Panel, RenderableText
+using PrettyTables
 using ..Core
 
 export parse_commandline, list_benchmarks
@@ -10,7 +10,7 @@ export parse_commandline, list_benchmarks
 function parse_commandline(args)
     s = ArgParseSettings(
         description = "Julia GPU Benchmark Suite - Production Health Check",
-        autofix_names = true, 
+        autofix_names = true,
         version = string(pkgversion(parentmodule(CLI))),
         add_version = true
     )
@@ -81,46 +81,35 @@ function parse_commandline(args)
 end
 
 function list_benchmarks()
-    # 1. Benchmark Tasks Table
+    sep = "─"^60
+    println(sep)
+    println("  GPUBenchmark.jl Registry")
+    println(sep)
+
+    println("\n  Registered Benchmark Tasks\n")
     task_names = String[]
     task_descs = String[]
     for (name, task) in sort(collect(REGISTRY), by=x->x[1])
-        push!(task_names, "{bold green}$name{/bold green}")
+        push!(task_names, name)
         push!(task_descs, task.description)
     end
-    
-    tasks_tbl = Table(
-        hcat(task_names, task_descs),
-        header=["Task", "Description"],
-        columns_justify=[:left, :left],
-        columns_widths=[15, 45],
-        box=:ROUNDED,
-        style="green"
-    )
-    
-    content = RenderableText("{bold white}📋 Registered Benchmark Tasks{/bold white}") / tasks_tbl
-    
-    # 2. Scaling Algorithms Table
+    pretty_table(hcat(task_names, task_descs);
+        column_labels = ["Task", "Description"],
+        alignment = :l,
+        table_format = TextTableFormat(borders = text_table_borders__compact),
+        fit_table_in_display_vertically = false)
+
     if !isempty(ALGORITHM_REGISTRY)
-        alg_names = ["{bold blue}$name{/bold blue}" for name in sort(collect(keys(ALGORITHM_REGISTRY)))]
-        algs_tbl = Table(
-            reshape(alg_names, :, 1),
-            header=["Algorithm"],
-            columns_justify=[:left],
-            columns_widths=[20],
-            box=:ROUNDED,
-            style="blue"
-        )
-        content = content / "" / RenderableText("{bold white}🧮 Registered Algorithms (for scaling){/bold white}") / algs_tbl
+        println("\n  Registered Algorithms (for scaling)\n")
+        alg_names = sort(collect(keys(ALGORITHM_REGISTRY)))
+        pretty_table(reshape(alg_names, :, 1);
+            column_labels = ["Algorithm"],
+            alignment = :l,
+            table_format = TextTableFormat(borders = text_table_borders__compact),
+            fit_table_in_display_vertically = false)
     end
-    
-    println(Panel(
-        content,
-        title=" {bold yellow}GPUBenchmark.jl Registry{/bold yellow} ",
-        style="yellow",
-        fit=true,
-        padding=(2, 2, 1, 1)
-    ))
+
+    println(sep)
 end
 
 end # module

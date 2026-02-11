@@ -129,6 +129,15 @@ function _render_scaling_plot(dat)
 
         show(stdout, MIME"text/plain"(), p)
         println()
+
+        # Efficiency text: smallest N at which mean TFLOPS reaches 90% of peak
+        if length(all_ns) > 1
+            peak = maximum(mean_ts)
+            idx  = findfirst(t -> t >= 0.9 * peak, mean_ts)
+            if !isnothing(idx)
+                @printf("  Peak: %.2f TFLOPS (mean) | 90%% efficiency at N >= %d\n", peak, all_ns[idx])
+            end
+        end
     elseif !isempty(dat.cpu_ns)
         # CPU-only fallback
         ord = sortperm(dat.cpu_ns)

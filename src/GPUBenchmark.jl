@@ -85,7 +85,7 @@ function (@main)(ARGS)
     )
 
     with_logger(tee_logger) do
-        @info "🚀 GPU BENCHMARK SUITE STARTING"
+        @info "[START] GPU BENCHMARK SUITE"
         @info "  - Node:      $hostname"
         @info "  - Time:      $timestamp"
         @info "  - Artifacts: $run_dir"
@@ -160,7 +160,7 @@ function (@main)(ARGS)
             open(joinpath(run_dir, "metrics.json"), "w") do f JSON.print(f, results, 4) end
             generate_text_report(results, run_dir)
             Base.invokelatest(save_plots, results, run_dir, parsed_args.plot_format)
-            @info "✅ All reports saved successfully."
+            @info "Reports saved."
 
             if !parsed_args.quiet
                 println("\n")
@@ -171,7 +171,7 @@ function (@main)(ARGS)
         end
 
         println("-"^60)
-        @info "🚀 BENCHMARK COMPLETE"
+        @info "[DONE] BENCHMARK COMPLETE"
     end
 
     finally

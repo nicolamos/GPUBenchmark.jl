@@ -25,7 +25,7 @@ function generate_text_report(results, output_dir)
             println(io, "  CUDA Runtime:  $(get(metadata, "cuda_runtime", "unknown"))")
             println(io, "  CUDA Driver:   $(get(metadata, "cuda_driver", "unknown"))")
         else
-            println(io, "  CUDA:          ⚠️ NOT FUNCTIONAL")
+            println(io, "  CUDA:          [WARNING] NOT FUNCTIONAL")
         end
         
         println(io, "")

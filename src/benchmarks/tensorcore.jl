@@ -1,7 +1,8 @@
 module TensorCore
 
 using CUDA
-using Statistics: median
+using BenchmarkTools
+using LinearAlgebra: mul!
 import ..Core: run_cpu, run_gpu
 using ..Core: register_benchmark, register_algorithm, AbstractAlgorithm
 
@@ -26,24 +27,13 @@ function run_gpu(::TensorCoreAlg, n)
     # Tensor Core Benchmark (Mixed Precision: FP16 input, FP32 accumulate)
     A = CUDA.rand(Float16, n, n)
     B = CUDA.rand(Float16, n, n)
+    C = CUDA.zeros(Float16, n, n)
 
-    # Warmup
-    C_warmup = CUDA.@sync A * B
-    CUDA.unsafe_free!(C_warmup)
-
-    # Benchmark: 5 iterations, take median
-    times = Float64[]
-    for _ in 1:5
-        t = @elapsed CUDA.@sync begin
-            C = A * B
-        end
-        CUDA.unsafe_free!(C)
-        push!(times, t)
-    end
-    t = median(times)
+    t = @belapsed CUDA.@sync mul!($C, $A, $B)
 
     CUDA.unsafe_free!(A)
     CUDA.unsafe_free!(B)
+    CUDA.unsafe_free!(C)
 
     return Dict(
         "time_s" => t,

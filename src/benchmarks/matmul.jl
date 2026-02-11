@@ -3,7 +3,8 @@ module MatMul
 using CUDA
 using BenchmarkTools
 using LinearAlgebra
-using Statistics: median
+using LinearAlgebra: mul!
+
 import ..Core: run_cpu, run_gpu
 using ..Core: register_benchmark, register_algorithm, AbstractAlgorithm
 
@@ -15,11 +16,9 @@ function run_cpu(::MatMulAlg, n, threads)
 
     A = rand(Float32, n, n)
     B = rand(Float32, n, n)
+    C = zeros(Float32, n, n)
 
-    # Use BenchmarkTools for accurate CPU timing
-    t = @belapsed begin
-        $A * $B
-    end
+    t = @belapsed mul!($C, $A, $B)
 
     return Dict(
         "time_s" => t,
@@ -37,24 +36,13 @@ function run_gpu(::MatMulAlg, n)
 
     A = CUDA.rand(Float32, n, n)
     B = CUDA.rand(Float32, n, n)
+    C = CUDA.zeros(Float32, n, n)
 
-    # Warmup
-    C_warmup = CUDA.@sync A * B
-    CUDA.unsafe_free!(C_warmup)
-
-    # Benchmark: 5 iterations, take median
-    times = Float64[]
-    for _ in 1:5
-        t = @elapsed CUDA.@sync begin
-            C = A * B
-        end
-        CUDA.unsafe_free!(C)
-        push!(times, t)
-    end
-    t = median(times)
+    t = @belapsed CUDA.@sync mul!($C, $A, $B)
 
     CUDA.unsafe_free!(A)
     CUDA.unsafe_free!(B)
+    CUDA.unsafe_free!(C)
 
     return Dict(
         "time_s" => t,

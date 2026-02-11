@@ -75,6 +75,13 @@ function GPUBenchmark.save_plots(results, output_path, format="png")
             @error "Failed to save scaling plot" exception=e
         end
     end
+
+    # Roofline plot (requires memory_bandwidth + at least matmul or scaling)
+    try
+        _save_roofline_plot(results["benchmarks"], output_path, format)
+    catch e
+        @error "Failed to save roofline plot" exception=e
+    end
 end
 
 function _save_scaling_plot(dat, output_path, format)
@@ -131,6 +138,81 @@ function _save_scaling_plot(dat, output_path, format)
     @info "Scaling plot saved to $plot_path"
 end
 
+function _save_roofline_plot(bench_data, output_path, format)
+    gi = get(bench_data, "gpuinspector", nothing)
+    bw_GiB_s = isnothing(gi) || haskey(gi, "error") ? nothing : get(gi, "memory_bandwidth", nothing)
+    isnothing(bw_GiB_s) && return
+
+    # Peak TFLOPS: prefer scaling result, fall back to matmul
+    peak_tflops = nothing
+    if haskey(bench_data, "scaling") && !haskey(bench_data["scaling"], "error")
+        peak_tflops = get(bench_data["scaling"], "peak_gpu_tflops", nothing)
+    end
+    if isnothing(peak_tflops) && haskey(bench_data, "matmul") && !haskey(bench_data["matmul"], "error")
+        peak_tflops = get(bench_data["matmul"], "tflops", nothing)
+    end
+    isnothing(peak_tflops) && return
+
+    # Bandwidth in T-bytes/s so the slope y = bw_T_bytes_s * x gives TFLOPS
+    bw_bytes_s   = bw_GiB_s * (1024^3)
+    bw_T_bytes_s = bw_bytes_s / 1e12
+    ridge_AI     = peak_tflops / bw_T_bytes_s   # FLOP/byte where lines cross
+
+    # X range: one decade below lowest measured AI to one decade above ridge
+    x_lo = 0.1
+    x_hi = ridge_AI * 10
+    xs   = exp10.(range(log10(x_lo), log10(x_hi), length=300))
+    bw_line = min.(bw_T_bytes_s .* xs, peak_tflops)
+
+    fig = Figure(size=(700, 500))
+    ax  = Axis(fig[1, 1];
+        title        = "Roofline Model",
+        xlabel       = "Arithmetic Intensity (FLOP/byte)",
+        ylabel       = "Attainable TFLOPS",
+        xscale       = log10,
+        yscale       = log10,
+        xgridvisible = true,
+        ygridvisible = true)
+
+    lines!(ax, xs, bw_line;
+        color=:steelblue, linewidth=2,
+        label="Memory BW ($(round(bw_GiB_s, digits=1)) GiB/s)")
+    hlines!(ax, [peak_tflops];
+        color=:darkorange, linewidth=2, linestyle=:dash,
+        label="Peak compute ($(round(peak_tflops, digits=1)) TFLOPS)")
+    vlines!(ax, [ridge_AI]; color=:gray, linewidth=1, linestyle=:dot)
+
+    # Measured points
+    pt_colors = [:seagreen, :crimson, :purple]
+    pt_idx = 1
+    if haskey(bench_data, "matmul") && !haskey(bench_data["matmul"], "error")
+        m = bench_data["matmul"]
+        n, t = get(m, "matrix_size", nothing), get(m, "tflops", nothing)
+        if !isnothing(n) && !isnothing(t)
+            ai = n / 6.0   # FP32: 2N³ / (3 * N² * 4 bytes)
+            scatter!(ax, [ai], [t];
+                color=pt_colors[pt_idx], marker=:circle, markersize=14,
+                label="MatMul FP32 (N=$n, AI=$(round(ai, digits=1)))")
+            pt_idx += 1
+        end
+    end
+    if haskey(bench_data, "tensorcore") && !haskey(bench_data["tensorcore"], "error")
+        tc = bench_data["tensorcore"]
+        n, t = get(tc, "matrix_size", nothing), get(tc, "tflops", nothing)
+        if !isnothing(n) && !isnothing(t)
+            ai = n / 3.0   # FP16: 2N³ / (3 * N² * 2 bytes)
+            scatter!(ax, [ai], [t];
+                color=pt_colors[pt_idx], marker=:diamond, markersize=14,
+                label="TensorCore FP16 (N=$n, AI=$(round(ai, digits=1)))")
+        end
+    end
+
+    axislegend(ax; position=:lt)
+    plot_path = joinpath(output_path, "roofline.$format")
+    save(plot_path, fig)
+    @info "Roofline plot saved to $plot_path"
+end
+
 function GPUBenchmark.cleanup()
     @info "Cleaning up GPU memory..."
     try
@@ -180,6 +262,17 @@ function _render_telemetry_gpuinspector(bench_data, run_path)
             all_vals = reduce(vcat, data)
             @printf("  Global Max: %.1f  |  Global Avg: %.1f  |  Devices: %d\n",
                 maximum(all_vals), mean(all_vals), num_gpus)
+        end
+
+        # TFLOPS/Watt efficiency (requires both power telemetry and scaling peak)
+        if haskey(res.results, :power) &&
+                haskey(bench_data, "scaling") && !haskey(bench_data["scaling"], "error")
+            peak_tflops = get(bench_data["scaling"], "peak_gpu_tflops", nothing)
+            if !isnothing(peak_tflops) && peak_tflops > 0
+                avg_power = mean(reduce(vcat, res.results[:power]))
+                @printf("\n  Efficiency:  %.3f TFLOPS/W  (%.1f TFLOPS peak / %.1f W avg)\n",
+                    peak_tflops / avg_power, peak_tflops, avg_power)
+            end
         end
 
     catch e

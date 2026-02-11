@@ -75,27 +75,27 @@ function _aggregate_per_n(gpu_data)
     return n_vals
 end
 
-function _render_scaling_plot(dat)
+function _render_scaling_plots(dat)
     if isempty(dat.cpu_ns) && isempty(dat.gpu_data)
         return
     end
 
     num_devices = length(dat.gpu_data)
-    println("\n  Scaling: $(dat.alg)")
+    println("\n  Performance Scaling (TFLOPS vs N):")
 
+    # 1. GPU Scaling (Separate)
     if !isempty(dat.gpu_data)
         n_vals = _aggregate_per_n(dat.gpu_data)
         all_ns  = sort(collect(keys(n_vals)))
         mean_ts = [mean(n_vals[n]) for n in all_ns]
 
         if num_devices <= 4
-            # Individual line per device + mean trend
             device_ids = sort(collect(keys(dat.gpu_data)))
             id1 = device_ids[1]
             ns1, ts1 = dat.gpu_data[id1]
             ord = sortperm(ns1)
             p = lineplot(ns1[ord], ts1[ord];
-                title="Scaling TFLOPS vs N ($(dat.alg))",
+                title="GPU Scaling",
                 xlabel="N", ylabel="TFLOPS",
                 color=_GPU_COLORS[1], width=70, height=12,
                 name="GPU $id1")
@@ -106,44 +106,50 @@ function _render_scaling_plot(dat)
                     color=_GPU_COLORS[mod1(i + 1, length(_GPU_COLORS))],
                     name="GPU $id")
             end
-            if num_devices > 1
-                lineplot!(p, all_ns, mean_ts; color=:white, name="mean")
-            end
+            num_devices > 1 && lineplot!(p, all_ns, mean_ts; color=:white, name="mean")
         else
-            # Envelope: min / mean / max across all devices
             max_ts = [maximum(n_vals[n]) for n in all_ns]
             min_ts = [minimum(n_vals[n]) for n in all_ns]
             p = lineplot(all_ns, max_ts;
-                title="Scaling TFLOPS vs N — $(num_devices) GPUs",
+                title="GPU Scaling — $(num_devices) GPUs",
                 xlabel="N", ylabel="TFLOPS",
                 color=:cyan, width=70, height=12, name="max")
             lineplot!(p, all_ns, mean_ts; color=:white, name="mean")
             lineplot!(p, all_ns, min_ts;  color=:red,   name="min")
         end
-
-        # CPU line on the same plot
-        if !isempty(dat.cpu_ns)
-            ord = sortperm(dat.cpu_ns)
-            lineplot!(p, dat.cpu_ns[ord], dat.cpu_tflops[ord]; color=:blue, name="CPU")
-        end
-
         show(stdout, MIME"text/plain"(), p)
         println()
-
-        # Efficiency text: smallest N at which mean TFLOPS reaches 90% of peak
-        if length(all_ns) > 1
-            peak = maximum(mean_ts)
-            idx  = findfirst(t -> t >= 0.9 * peak, mean_ts)
-            if !isnothing(idx)
-                @printf("  Peak: %.2f TFLOPS (mean) | 90%% efficiency at N >= %d\n", peak, all_ns[idx])
-            end
-        end
-    elseif !isempty(dat.cpu_ns)
-        # CPU-only fallback
-        ord = sortperm(dat.cpu_ns)
-        render_lineplot(dat.cpu_ns[ord], dat.cpu_tflops[ord];
-            title="CPU Scaling TFLOPS vs N", xlabel="N", ylabel="TFLOPS", color=:blue)
     end
+
+    # 2. CPU Scaling (Separate)
+    if !isempty(dat.cpu_ns)
+        ord = sortperm(dat.cpu_ns)
+        p_cpu = lineplot(dat.cpu_ns[ord], dat.cpu_tflops[ord];
+            title="CPU Scaling", xlabel="N", ylabel="TFLOPS", 
+            color=:blue, width=70, height=12)
+        show(stdout, MIME"text/plain"(), p_cpu)
+        println()
+    end
+end
+
+function _render_roofline(dat; device="GPU", peak_tflops=10.0, peak_bw_gb=500.0)
+    # Intensity I = FLOPs / Byte. For MatMul Float32: I = N/6.
+    ns = device == "GPU" ? (isempty(dat.gpu_data) ? Int[] : first(values(dat.gpu_data))[1]) : dat.cpu_ns
+    ts = device == "GPU" ? (isempty(dat.gpu_data) ? Float64[] : first(values(dat.gpu_data))[2]) : dat.cpu_tflops
+    
+    isempty(ns) && return
+    
+    is = ns ./ 6.0 
+    max_i = maximum(is) * 1.2
+    roof_is = range(0.1, max_i, length=100)
+    roof_ts = [min(peak_tflops, i * peak_bw_gb / 1000.0) for i in roof_is]
+    
+    println("\n  Roofline Analysis ($(device)):")
+    p = lineplot(roof_is, roof_ts, title="$(device) Roofline", xlabel="Intensity (FLOP/Byte)", ylabel="TFLOPS", color=:white, width=70, height=12)
+    scatterplot!(p, is, ts, color=:cyan)
+    show(stdout, MIME"text/plain"(), p)
+    println()
+    println("  Guide: Points on the slope are Bandwidth-Bound; points on the ceiling are Compute-Bound.")
 end
 
 function show_results(path::String)
@@ -192,24 +198,20 @@ function show_results(path::String)
             haskey(m, "matrix_size") ? "N=$(m["matrix_size"])" : "")
     end
 
-    if haskey(bench_data, "tensorcore")
-        t = bench_data["tensorcore"]
-        !haskey(t, "error") && add_row!("TensorCore",
-            @sprintf("%.2f TFLOPS", t["tflops"]),
-            haskey(t, "matrix_size") ? "N=$(t["matrix_size"]) Mixed Prec" : "Mixed Prec")
-    end
-
     if haskey(bench_data, "scaling")
         s = bench_data["scaling"]
         !haskey(s, "error") && add_row!("Scaling",
             @sprintf("%.2f TFLOPS (GPU peak)", get(s, "peak_gpu_tflops", 0.0)),
             @sprintf("CPU: %.2f", get(s, "peak_cpu_tflops", 0.0)))
-    end
 
-    if haskey(bench_data, "gpuinspector")
-        gi = bench_data["gpuinspector"]
-        haskey(gi, "memory_bandwidth") && add_row!("Memory BW",
-            @sprintf("%.2f GiB/s", gi["memory_bandwidth"]), "Burn-in")
+        # Power Efficiency if available
+        if haskey(bench_data, "gpuinspector")
+            gi = bench_data["gpuinspector"]
+            if haskey(gi, "avg_power_w") && gi["avg_power_w"] > 0
+                eff = (get(s, "peak_gpu_tflops", 0.0) * 1000) / gi["avg_power_w"]
+                add_row!("Efficiency", @sprintf("%.2f GFLOPS/W", eff), "Peak Perf/Avg Power")
+            end
+        end
     end
 
     if !isempty(tasks)
@@ -223,14 +225,28 @@ function show_results(path::String)
         println("  No benchmark data found.")
     end
 
-    # Scaling terminal plot (from scaling.dat)
+    # Scaling & Roofline (from scaling.dat)
     dat_path = joinpath(path, "scaling.dat")
     if isfile(dat_path)
         try
             dat = parse_scaling_dat(dat_path)
-            _render_scaling_plot(dat)
+            _render_scaling_plots(dat)
+            
+            # Use results for roofs
+            peak_gpu = 10.0; peak_cpu = 1.0; bw_gpu = 500.0; bw_cpu = 50.0
+            if haskey(bench_data, "scaling")
+                peak_gpu = get(bench_data["scaling"], "peak_gpu_tflops", 10.0)
+                peak_cpu = get(bench_data["scaling"], "peak_cpu_tflops", 1.0)
+            end
+            if haskey(bench_data, "gpuinspector")
+                bw_gpu = get(bench_data["gpuinspector"], "memory_bandwidth", 500.0)
+            end
+            
+            _render_roofline(dat, device="GPU", peak_tflops=peak_gpu, peak_bw_gb=bw_gpu)
+            _render_roofline(dat, device="CPU", peak_tflops=peak_cpu, peak_bw_gb=bw_cpu)
+            
         catch e
-            @warn "Could not render scaling plot" exception=e
+            @warn "Could not render scaling/roofline plots" exception=e
         end
     end
 

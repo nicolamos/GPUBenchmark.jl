@@ -157,7 +157,16 @@ function (@main)(ARGS)
                 scaling_raw["peak_gpu_tflops"] = peak_gpu
             end
 
-            open(joinpath(run_dir, "metrics.json"), "w") do f JSON.print(f, results, 4) end
+            open(joinpath(run_dir, "metrics.json"), "w") do f
+                # Prune raw data for efficiency
+                pruned_results = deepcopy(results)
+                if haskey(pruned_results["benchmarks"], "gpuinspector")
+                    gi = pruned_results["benchmarks"]["gpuinspector"]
+                    delete!(gi, "_raw_monitoring")
+                end
+                # We keep scaling results as they are already a summary or structured dict
+                JSON.print(f, pruned_results, 4)
+            end
             generate_text_report(results, run_dir)
             Base.invokelatest(save_plots, results, run_dir, parsed_args.plot_format)
             @info "Reports saved."

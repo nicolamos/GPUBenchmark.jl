@@ -25,7 +25,7 @@ function generate_text_report(results, output_dir)
             println(io, "  CUDA Runtime:  $(get(metadata, "cuda_runtime", "unknown"))")
             println(io, "  CUDA Driver:   $(get(metadata, "cuda_driver", "unknown"))")
         else
-            println(io, "  CUDA:          [WARNING] NOT FUNCTIONAL")
+            println(io, "  CUDA:          ⚠️ NOT FUNCTIONAL")
         end
         
         println(io, "")
@@ -35,54 +35,36 @@ function generate_text_report(results, output_dir)
             si = benchmarks["sysinfo"]
             if !haskey(si, "error")
                 # CPU / System
-                if haskey(si, "cpu_model")
-                    println(io, "  CPU Model:     $(si["cpu_model"])")
-                end
-                if haskey(si, "cpu_arch")
-                    println(io, "  CPU Arch:      $(si["cpu_arch"])")
-                end
-                if haskey(si, "cpu_threads")
-                    println(io, "  CPU Threads:   $(si["cpu_threads"])")
-                end
-                if haskey(si, "ram_total")
-                    println(io, "  Total RAM:     $(si["ram_total"])")
-                end
+                println(io, "  CPU Model:     $(get(si, "cpu_model", "unknown"))")
+                println(io, "  CPU Threads:   $(get(si, "cpu_threads", "unknown")) ($(get(si, "cpu_arch", "unknown")))")
+                println(io, "  Total RAM:     $(get(si, "ram_total", "unknown"))")
+                
                 # GPU
                 println(io, "  GPU Model:     $(get(si, "gpu_name", "unknown"))")
                 println(io, "  Compute Cap:   $(get(si, "compute_capability", "unknown"))")
                 println(io, "  Total VRAM:    $(get(si, "vram_total", "unknown"))")
-                println(io, "  GPU UUID:      $(get(si, "gpu_uuid", "unknown"))")
-                if haskey(si, "pci_bus_id")
-                    println(io, "  PCI Bus ID:    $(si["pci_bus_id"])")
-                end
-                if haskey(si, "gpu_count") && si["gpu_count"] > 1
+                if get(si, "gpu_count", 1) > 1
                     println(io, "  GPU Count:     $(si["gpu_count"])")
                 end
-            else
-                println(io, "  Status:        Failed to collect capability info.")
             end
         end
 
         println(io, "")
-        println(io, "[3. PERFORMANCE RESULTS]")
+        println(io, "[3. PERFORMANCE & EFFICIENCY]")
         
         if haskey(benchmarks, "matmul")
             m = benchmarks["matmul"]
             if !haskey(m, "error")
-                @printf(io, "  Raw Compute:   %.2f TFLOPS (FP32)\n", get(m, "tflops", 0.0))
-            end
-        end
-
-        if haskey(benchmarks, "tensorcore")
-            t = benchmarks["tensorcore"]
-            if !haskey(t, "error")
-                @printf(io, "  Tensor Cores:  %.2f TFLOPS (Mixed Prec)\n", get(t, "tflops", 0.0))
+                @printf(io, "  FP32 Compute:  %.2f TFLOPS\n", get(m, "tflops", 0.0))
             end
         end
 
         if haskey(benchmarks, "scaling")
             s = benchmarks["scaling"]
-            @printf(io, "  Peak Compute:  %.2f TFLOPS (GPU Scaling)\n", get(s, "peak_gpu_tflops", 0.0))
+            if !haskey(s, "error")
+                @printf(io, "  Peak (GPU):    %.2f TFLOPS\n", get(s, "peak_gpu_tflops", 0.0))
+                @printf(io, "  Peak (CPU):    %.2f TFLOPS\n", get(s, "peak_cpu_tflops", 0.0))
+            end
         end
 
         if haskey(benchmarks, "gpuinspector")
@@ -91,11 +73,26 @@ function generate_text_report(results, output_dir)
                 if haskey(r, "memory_bandwidth")
                     @printf(io, "  Memory BW:     %.2f GiB/s\n", get(r, "memory_bandwidth", 0.0))
                 end
-                if haskey(r, "peak_power")
-                    @printf(io, "  Peak Power:    %.1f W\n", get(r, "peak_power", 0.0))
+                
+                # Power Efficiency
+                if haskey(benchmarks, "scaling") && haskey(r, "avg_power_w")
+                    peak_gpu = get(benchmarks["scaling"], "peak_gpu_tflops", 0.0)
+                    avg_pwr = r["avg_power_w"]
+                    if avg_pwr > 0
+                        eff = (peak_gpu * 1000) / avg_pwr # GFLOPS/W
+                        @printf(io, "  Energy Eff:    %.2f GFLOPS/Watt\n", eff)
+                    end
                 end
             end
         end
+
+        println(io, "")
+        println(io, "[4. INTERPRETATION GUIDE]")
+        println(io, "  * Roofline: Points on the slope are Bandwidth-Bound (limited by memory).")
+        println(io, "              Points on the flat ceiling are Compute-Bound (limited by cores).")
+        println(io, "  * Efficiency: GFLOPS/Watt measures how much work is done per unit of energy.")
+        println(io, "                Higher values indicate better sustainability and lower heat.")
+        
         println(io, "")
         println(io, "================================================================")
         println(io, "Generated by GPUBenchmark.jl Suite")

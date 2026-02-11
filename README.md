@@ -114,6 +114,7 @@ julia --project=@gpu-test -m GPUBenchmark scaling --devices 0,1 --parallel --cpu
 - `--devices`: GPU IDs to use (`0,1,2`) or `all`.
 - `--parallel`: Enable parallel probing (evaluates system-wide bottlenecks).
 - `--algorithm`: Select a registered algorithm (default: `matmul`).
+- `--plot-format`: Output format for saved plots (`png`, `pdf`, `svg`). Default: `png`.
 
 ### 🧩 Custom Algorithms (Plugins)
 The suite uses a **Hybrid Plugin Strategy**:
@@ -189,7 +190,8 @@ Results are saved to `results/<hostname>/<timestamp>/`.
 
 - **`summary.txt`**: Human-readable report of specs and scores.
 - **`metrics.json`**: Structured data for automation/CI.
-- **`dashboard.png`**: (Ext) Visual chart of Power, Temp, and Utilization.
+- **`dashboard.<format>`**: (Ext) Visual chart of Power, Temp, and Utilization.
+- **`scaling_plot.<format>`**: (Ext) Professional chart of performance scaling.
 - **`telemetry.h5`**: (Ext) Raw sensor data from the burn-in.
 
 ---

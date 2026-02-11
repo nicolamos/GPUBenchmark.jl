@@ -153,16 +153,13 @@ function (@main)(ARGS)
                 gpu_peaks = [maximum(r -> r["tflops"], runs) for (_, runs) in scaling_raw["gpu_results"] if !isempty(runs)]
                 peak_gpu = isempty(gpu_peaks) ? 0.0 : maximum(gpu_peaks)
 
-                results["benchmarks"]["scaling"] = Dict(
-                    "algorithm" => scaling_raw["algorithm"],
-                    "peak_cpu_tflops" => peak_cpu,
-                    "peak_gpu_tflops" => peak_gpu
-                )
+                scaling_raw["peak_cpu_tflops"] = peak_cpu
+                scaling_raw["peak_gpu_tflops"] = peak_gpu
             end
 
             open(joinpath(run_dir, "metrics.json"), "w") do f JSON.print(f, results, 4) end
             generate_text_report(results, run_dir)
-            Base.invokelatest(save_plots, results, run_dir)
+            Base.invokelatest(save_plots, results, run_dir, parsed_args.plot_format)
             @info "✅ All reports saved successfully."
 
             if !parsed_args.quiet

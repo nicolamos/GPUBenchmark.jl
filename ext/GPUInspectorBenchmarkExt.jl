@@ -41,7 +41,7 @@ function run_gpuinspector(args)
     return results
 end
 
-function GPUBenchmark.save_plots(results, output_path)
+function GPUBenchmark.save_plots(results, output_path, format="png")
     if haskey(results["benchmarks"], "gpuinspector")
         g_res = results["benchmarks"]["gpuinspector"]
         if haskey(g_res, "_raw_monitoring")
@@ -55,7 +55,7 @@ function GPUBenchmark.save_plots(results, output_path)
                 @error "Failed to save HDF5 telemetry" exception=e
             end
 
-            plot_file = joinpath(output_path, "dashboard.png")
+            plot_file = joinpath(output_path, "dashboard.$format")
             @info "Saving dashboard to $plot_file"
             try
                 savefig_monitoring_results(plot_file, mon_results)
@@ -65,45 +65,56 @@ function GPUBenchmark.save_plots(results, output_path)
         end
     end
 
-    # Scaling SVG (read from scaling.dat, same source as terminal plot)
+    # Scaling plot (read from scaling.dat, same source as terminal plot)
     dat_path = joinpath(output_path, "scaling.dat")
     if isfile(dat_path)
         try
             dat = GPUBenchmark.Visuals.parse_scaling_dat(dat_path)
-            _save_scaling_svg(dat, output_path)
+            _save_scaling_plot(dat, output_path, format)
         catch e
             @error "Failed to save scaling plot" exception=e
         end
     end
 end
 
-function _save_scaling_svg(dat, output_path)
+function _save_scaling_plot(dat, output_path, format)
     if isempty(dat.cpu_ns) && isempty(dat.gpu_data)
         return
     end
 
     fig = Figure(size=(800, 500))
     ax = Axis(fig[1, 1],
-        title  = "Scaling: $(dat.alg)",
+        title  = "Scaling Performance: $(dat.alg)",
         xlabel = "Matrix Size N",
-        ylabel = "TFLOPS")
+        ylabel = "TFLOPS",
+        xgridvisible = true,
+        ygridvisible = true)
 
+    # Use a nice color palette
+    colors = Makie.wong_colors()
+    
+    i = 1
     for (dev_id, (ns, ts)) in dat.gpu_data
         isempty(ns) && continue
         ord = sortperm(ns)
-        lines!(ax, ns[ord], ts[ord]; label="GPU $dev_id")
+        scatterlines!(ax, ns[ord], ts[ord]; 
+            label="GPU $dev_id", 
+            color=colors[mod1(i, length(colors))],
+            marker=:circle, markersize=8)
+        i += 1
     end
 
     if !isempty(dat.cpu_ns)
         ord = sortperm(dat.cpu_ns)
-        lines!(ax, dat.cpu_ns[ord], dat.cpu_tflops[ord];
-            label="CPU", linestyle=:dash, color=:gray)
+        scatterlines!(ax, dat.cpu_ns[ord], dat.cpu_tflops[ord];
+            label="CPU", linestyle=:dash, color=:gray,
+            marker=:rect, markersize=8)
     end
 
-    axislegend(ax)
-    svg_path = joinpath(output_path, "scaling_plot.svg")
-    save(svg_path, fig)
-    @info "Scaling plot saved to $svg_path"
+    axislegend(ax, position=:lt)
+    plot_path = joinpath(output_path, "scaling_plot.$format")
+    save(plot_path, fig)
+    @info "Scaling plot saved to $plot_path"
 end
 
 function GPUBenchmark.cleanup()

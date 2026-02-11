@@ -63,6 +63,10 @@ function parse_commandline(args)
         "--quiet", "-q"
             help = "Suppress terminal dashboard."
             action = :store_true
+        "--plot-format"
+            help = "Format for saved plots (png, pdf, svg)."
+            arg_type = String
+            default = "png"
         "--show-latest"
             help = "Show the dashboard for the latest benchmark run and exit."
             action = :store_true

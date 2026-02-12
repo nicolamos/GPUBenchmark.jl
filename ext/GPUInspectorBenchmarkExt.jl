@@ -5,7 +5,7 @@ using GPUInspector
 using CairoMakie
 using CUDA
 using JSON
-using Statistics: mean
+using Statistics: mean, median
 using Printf
 
 function run_gpuinspector(args)
@@ -71,6 +71,16 @@ function GPUBenchmark.save_plots(results, output_path, format="png")
         end
     end
 
+    # Latency histogram (CairoMakie)
+    bench_data = results["benchmarks"]
+    if haskey(bench_data, "matmul") && haskey(bench_data["matmul"], "samples")
+        try
+            _save_latency_histogram(bench_data["matmul"]["samples"], output_path, format)
+        catch e
+            @error "Failed to save latency histogram" exception=e
+        end
+    end
+
     # Performance plots
     dat_path = joinpath(output_path, "scaling.dat")
     if isfile(dat_path)
@@ -94,6 +104,19 @@ function GPUBenchmark.save_plots(results, output_path, format="png")
     end
 end
 
+function _save_latency_histogram(samples, output_path, format)
+    samples_ms = samples .* 1000.0
+    fig = Figure(size=(600, 400))
+    ax = Axis(fig[1, 1],
+        title  = "Kernel Latency Distribution (MatMul FP32)",
+        xlabel = "Time (ms)", ylabel = "Count",
+        xgridvisible = true, ygridvisible = true)
+    hist!(ax, samples_ms; bins=20, color=(:royalblue, 0.7), strokecolor=:white, strokewidth=1)
+    vlines!(ax, [median(samples_ms)]; color=:red, linestyle=:dash, label="Median")
+    axislegend(ax, position=:rt)
+    save(joinpath(output_path, "latency_histogram.$format"), fig)
+end
+
 function _save_scaling_plots(dat, output_path, format)
     if isempty(dat.cpu_ns) && isempty(dat.gpu_data)
         return
@@ -115,6 +138,20 @@ function _save_scaling_plots(dat, output_path, format)
         scatterlines!(ax_gpu, ns[ord], ts[ord]; label="GPU $dev_id", color=colors[mod1(i, length(colors))], marker=:circle)
         i += 1
     end
+
+    # Mean trend line across all devices (only when >1 GPU)
+    if length(dat.gpu_data) > 1
+        n_vals = Dict{Int, Vector{Float64}}()
+        for (_, (ns, ts)) in dat.gpu_data
+            for (n, t) in zip(ns, ts)
+                push!(get!(n_vals, n, Float64[]), t)
+            end
+        end
+        mean_ns = sort(collect(keys(n_vals)))
+        mean_ts = [mean(n_vals[n]) for n in mean_ns]
+        lines!(ax_gpu, mean_ns, mean_ts; label="mean", color=:black, linestyle=:dot, linewidth=2)
+    end
+
     axislegend(ax_gpu, position=:lt)
 
     # CPU Axis (Independent Y-scale)
@@ -210,8 +247,24 @@ function _render_telemetry_gpuinspector(bench_data, run_path)
             data = res.results[s]
             num_gpus = length(res.devices)
 
-            history_len = length(data[1])
-            aggregated = [mean([data[gpu][t] for gpu in 1:num_gpus]) for t in 1:history_len]
+            # Detect data orientation and aggregate per timestep:
+            #   data[gpu][t]  → outer length == num_gpus  (device-major)
+            #   data[t][gpu]  → outer length == num_timesteps (time-major)
+            #   flat Vector   → data[t] is a scalar
+            aggregated = if isempty(data)
+                Float64[]
+            elseif !(data[1] isa AbstractArray)
+                # Flat time series (already aggregated or single GPU)
+                Float64.(data)
+            elseif length(data) == num_gpus
+                # Device-major: data[gpu][t]
+                history_len = length(data[1])
+                [mean(data[gpu][t] for gpu in 1:num_gpus) for t in 1:history_len]
+            else
+                # Time-major: data[t] is a per-GPU snapshot vector
+                [mean(data[t]) for t in 1:length(data)]
+            end
+            isempty(aggregated) && continue
             vals = smooth_and_resample(aggregated)
 
             println("\n") # Space before plot

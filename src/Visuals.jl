@@ -141,48 +141,43 @@ function _render_scaling_plots(dat)
 end
 
 function _render_roofline(dat; device="GPU", peak_tflops=10.0, peak_bw_gb=500.0)
-    # Intensity I = FLOPs / Byte. For MatMul Float32: I = N/6.
+    # Arithmetic intensity for FP32 matmul NxN: 2N³ FLOPs / 12N² bytes = N/6 FLOP/byte
     ns = device == "GPU" ? (isempty(dat.gpu_data) ? Int[] : first(values(dat.gpu_data))[1]) : dat.cpu_ns
     ts = device == "GPU" ? (isempty(dat.gpu_data) ? Float64[] : first(values(dat.gpu_data))[2]) : dat.cpu_tflops
-    
+
     isempty(ns) && return
-    
-    is = ns ./ 6.0 
-    bw_t_s = (peak_bw_gb * 1024^3) / 1e12
-    ridge_i = peak_tflops / bw_t_s
-    
-    # Filter out zero intensity for log scale
-    valid_idx = is .> 0
-    is = is[valid_idx]
-    ts = ts[valid_idx]
-    
-    log_is = log10.(is)
-    log_ts = log10.(ts)
-    
-    # Roof points
-    max_i = maximum(is) * 1.5
-    roof_is_val = [0.1, ridge_i, max_i]
-    roof_ts_val = [0.1 * bw_t_s, peak_tflops, peak_tflops]
-    
-    log_roof_is = log10.(roof_is_val)
-    log_roof_ts = log10.(roof_ts_val)
-    
-    println("\n  Roofline Analysis ($(device)) [Log-Log]:")
-    p = lineplot(log_roof_is, log_roof_ts, 
-        title="$(device) Roofline", xlabel="Log10(Intensity: FLOP/Byte)", ylabel="Log10(TFLOPS)", 
-        color=:white, width=70, height=12, name="Theoretical")
-    
-    scatterplot!(p, log_is, log_ts, color=:cyan, marker=:circle, name="Measured")
-    
-    # Vertical Ridge Line
-    ridge_log = log10(ridge_i)
-    v_xs = fill(ridge_log, 10)
-    v_ys = range(minimum(log_ts), log10(peak_tflops), length=10)
-    lineplot!(p, v_xs, v_ys, color=:red, name="Ridge")
-    
+
+    is = ns ./ 6.0
+    valid = is .> 0
+    is = is[valid]; ts = ts[valid]
+    isempty(is) && return
+
+    bw_t_s   = (peak_bw_gb * 1024^3) / 1e12   # bandwidth ceiling slope (TFLOPS per FLOP/Byte)
+    ridge_i  = peak_tflops / bw_t_s             # ridge point: above this the kernel is compute-bound
+
+    # Piecewise theoretical roofline: BW slope up to ridge, flat at peak
+    min_i = minimum(is) * 0.5
+    max_i = maximum(is) * 2.0
+    n_pts = 60
+    roof_is = exp10.(range(log10(min_i), log10(max_i), length=n_pts))
+    roof_ts = [min(peak_tflops, i * bw_t_s) for i in roof_is]
+
+    # Ridge vertical line (two endpoints, UnicodePlots interpolates)
+    ridge_xs = [ridge_i, ridge_i]
+    ridge_ys = [minimum(ts) * 0.5, peak_tflops]
+
+    println("\n  Roofline Analysis ($(device)) — log/log axes:")
+    p = lineplot(roof_is, roof_ts;
+        title="$(device) Roofline", xlabel="Intensity (FLOP/Byte)", ylabel="TFLOPS",
+        color=:white, width=70, height=12,
+        xscale=:log10, yscale=:log10,
+        name="Theoretical")
+    lineplot!(p, ridge_xs, ridge_ys; color=:red, name="Ridge ($(@sprintf("%.1f", ridge_i)) F/B)")
+    scatterplot!(p, is, ts; color=:cyan, marker=:circle, name="Measured")
+
     show(stdout, MIME"text/plain"(), p)
     println()
-    println("  Ridge Point: Intensity = $(@sprintf("%.2f", ridge_i)) FLOP/Byte")
+    println("  Ridge: below $(@sprintf("%.1f", ridge_i)) FLOP/Byte → memory-bound; above → compute-bound")
 end
 
 function _render_bandwidth_util_plot(dat; device="GPU", peak_bw_gb=500.0)
@@ -240,9 +235,6 @@ function show_results(path::String)
     println("  CUDA:  $(meta["cuda_runtime"]) (Driver: $(meta["cuda_driver"]))")
     println(sep)
 
-    # Latency Histogram if available
-    _render_latency_histogram(bench_data)
-
     # Benchmark table
     tasks = String[]; perf = String[]; details = String[]
 
@@ -295,6 +287,9 @@ function show_results(path::String)
     else
         println("  No benchmark data found.")
     end
+
+    # Latency histogram (after summary table)
+    _render_latency_histogram(bench_data)
 
     # Scaling & Roofline (from scaling.dat)
     dat_path = joinpath(path, "scaling.dat")

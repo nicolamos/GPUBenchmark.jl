@@ -170,13 +170,17 @@ function (@main)(ARGS)
             generate_text_report(results, run_dir)
             Base.invokelatest(save_plots, results, run_dir, parsed_args.plot_format)
             @info "Reports saved."
-
-            if !parsed_args.quiet
-                println("\n")
-                Base.invokelatest(Visuals.show_results, run_dir)
-            end
         catch e
             @error "Failed to save final reports" exception=e
+        end
+
+        if !parsed_args.quiet
+            try
+                println("\n")
+                Base.invokelatest(Visuals.show_results, run_dir)
+            catch e
+                @warn "Could not display results summary" exception=e
+            end
         end
 
         println("-"^60)

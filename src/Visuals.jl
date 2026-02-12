@@ -215,7 +215,7 @@ function _render_latency_histogram(bench_data)
     
     samples_ms = m["samples"] .* 1000.0
     println("\n  Latency Distribution (MatMul FP32):")
-    p = histogram(samples_ms, bins=15, title="Kernel Latency", xlabel="Time (ms)", color=:yellow, width=70, height=10)
+    p = histogram(samples_ms, nbins=15, title="Kernel Latency", xlabel="Time (ms)", color=:yellow, width=70, height=10)
     show(stdout, MIME"text/plain"(), p)
     println()
 end
@@ -325,7 +325,11 @@ function show_results(path::String)
     end
 
     # Telemetry plots (from extension)
-    render_telemetry(bench_data, path)
+    try
+        render_telemetry(bench_data, path)
+    catch e
+        @warn "Could not render telemetry" exception=e
+    end
 
     println(sep)
     println("  Path: $path")

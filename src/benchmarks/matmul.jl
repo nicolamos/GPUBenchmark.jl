@@ -2,6 +2,7 @@ module MatMul
 
 using CUDA
 using BenchmarkTools
+using Statistics: mean
 using LinearAlgebra
 using LinearAlgebra: mul!
 
@@ -18,11 +19,17 @@ function run_cpu(::MatMulAlg, n, threads)
     B = rand(Float32, n, n)
     C = zeros(Float32, n, n)
 
-    t = @belapsed mul!($C, $A, $B)
+    trial = @benchmark mul!($C, $A, $B)
+    t_min = minimum(trial.times) / 1e9
+    t_mean = mean(trial.times) / 1e9
+    t_max = maximum(trial.times) / 1e9
 
     return Dict(
-        "time_s" => t,
-        "tflops" => (2.0 * n^3) / t / 1e12,
+        "time_s" => t_mean,
+        "min_time" => t_min,
+        "max_time" => t_max,
+        "tflops" => (2.0 * n^3) / t_min / 1e12,
+        "samples" => trial.times ./ 1e9,
         "mode" => "cpu",
         "threads" => threads,
         "matrix_size" => n
@@ -38,15 +45,21 @@ function run_gpu(::MatMulAlg, n)
     B = CUDA.rand(Float32, n, n)
     C = CUDA.zeros(Float32, n, n)
 
-    t = @belapsed CUDA.@sync mul!($C, $A, $B)
+    trial = @benchmark CUDA.@sync mul!($C, $A, $B)
+    t_min = minimum(trial.times) / 1e9
+    t_mean = mean(trial.times) / 1e9
+    t_max = maximum(trial.times) / 1e9
 
     CUDA.unsafe_free!(A)
     CUDA.unsafe_free!(B)
     CUDA.unsafe_free!(C)
 
     return Dict(
-        "time_s" => t,
-        "tflops" => (2.0 * n^3) / t / 1e12,
+        "time_s" => t_mean,
+        "min_time" => t_min,
+        "max_time" => t_max,
+        "tflops" => (2.0 * n^3) / t_min / 1e12,
+        "samples" => trial.times ./ 1e9,
         "mode" => "gpu",
         "matrix_size" => n
     )

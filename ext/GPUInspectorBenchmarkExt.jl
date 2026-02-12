@@ -145,7 +145,10 @@ function _save_roofline_plots(dat, output_path, format, peak_gpu, peak_cpu, bw_g
         roof_is = range(0.1, max_i, length=200)
         bw_T_s = (bw_gpu * 1024^3) / 1e12
         roof_ts = [min(peak_gpu, i * bw_T_s) for i in roof_is]
+        ridge_i = peak_gpu / bw_T_s
+        
         lines!(ax_gpu, roof_is, roof_ts, color=:black, linewidth=2, label="Theoretical Roof")
+        vlines!(ax_gpu, [ridge_i], color=:red, linestyle=:dash, label="Ridge Point ($(@sprintf("%.2f", ridge_i)))")
         scatter!(ax_gpu, is, ts_g, color=:cyan, markersize=12, label="Measured Scaling")
     end
     axislegend(ax_gpu, position=:rb)
@@ -158,7 +161,10 @@ function _save_roofline_plots(dat, output_path, format, peak_gpu, peak_cpu, bw_g
         roof_isc = range(0.1, max_ic, length=200)
         bw_T_sc = (bw_cpu * 1024^3) / 1e12
         roof_tsc = [min(peak_cpu, i * bw_T_sc) for i in roof_isc]
+        ridge_ic = peak_cpu / bw_T_sc
+        
         lines!(ax_cpu, roof_isc, roof_tsc, color=:black, linewidth=2, label="Theoretical Roof")
+        vlines!(ax_cpu, [ridge_ic], color=:red, linestyle=:dash, label="Ridge Point ($(@sprintf("%.2f", ridge_ic)))")
         scatter!(ax_cpu, is_c, dat.cpu_tflops, color=:blue, markersize=12, label="Measured Scaling")
     end
     axislegend(ax_cpu, position=:rb)

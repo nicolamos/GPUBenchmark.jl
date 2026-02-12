@@ -34,9 +34,11 @@ function render_lineplot(xs, ys; title="", xlabel="", ylabel="", color=:cyan, wi
 end
 
 function parse_scaling_dat(dat_path)
-    cpu_ns = Int[]; cpu_tflops = Float64[]
+    cpu_ns = Int[]; cpu_tflops = Float64[]; cpu_min = Float64[]; cpu_max = Float64[]
     gpu_ns   = Dict{String, Vector{Int}}()
     gpu_tflops = Dict{String, Vector{Float64}}()
+    gpu_min    = Dict{String, Vector{Float64}}()
+    gpu_max    = Dict{String, Vector{Float64}}()
     alg = ""
 
     open(dat_path) do io
@@ -51,16 +53,22 @@ function parse_scaling_dat(dat_path)
             mode = parts[2]
             id = parts[3]
             tflops = parse(Float64, parts[5])
+            tmin = length(parts) >= 6 ? parse(Float64, parts[6]) : 0.0
+            tmax = length(parts) >= 7 ? parse(Float64, parts[7]) : 0.0
+            
             if mode == "CPU"
                 push!(cpu_ns, n); push!(cpu_tflops, tflops)
+                push!(cpu_min, tmin); push!(cpu_max, tmax)
             else
                 push!(get!(gpu_ns,     id, Int[]),     n)
                 push!(get!(gpu_tflops, id, Float64[]), tflops)
+                push!(get!(gpu_min,    id, Float64[]), tmin)
+                push!(get!(gpu_max,    id, Float64[]), tmax)
             end
         end
     end
-    gpu_data = Dict(id => (gpu_ns[id], gpu_tflops[id]) for id in keys(gpu_ns))
-    return (alg=alg, cpu_ns=cpu_ns, cpu_tflops=cpu_tflops, gpu_data=gpu_data)
+    gpu_data = Dict(id => (gpu_ns[id], gpu_tflops[id], gpu_min[id], gpu_max[id]) for id in keys(gpu_ns))
+    return (alg=alg, cpu_ns=cpu_ns, cpu_tflops=cpu_tflops, cpu_min=cpu_min, cpu_max=cpu_max, gpu_data=gpu_data)
 end
 
 const _GPU_COLORS = [:green, :red, :cyan, :magenta, :yellow]
@@ -140,16 +148,76 @@ function _render_roofline(dat; device="GPU", peak_tflops=10.0, peak_bw_gb=500.0)
     isempty(ns) && return
     
     is = ns ./ 6.0 
-    max_i = maximum(is) * 1.2
-    roof_is = range(0.1, max_i, length=100)
-    roof_ts = [min(peak_tflops, i * peak_bw_gb / 1000.0) for i in roof_is]
+    bw_t_s = (peak_bw_gb * 1024^3) / 1e12
+    ridge_i = peak_tflops / bw_t_s
     
-    println("\n  Roofline Analysis ($(device)):")
-    p = lineplot(roof_is, roof_ts, title="$(device) Roofline", xlabel="Intensity (FLOP/Byte)", ylabel="TFLOPS", color=:white, width=70, height=12)
-    scatterplot!(p, is, ts, color=:cyan)
+    # Filter out zero intensity for log scale
+    valid_idx = is .> 0
+    is = is[valid_idx]
+    ts = ts[valid_idx]
+    
+    log_is = log10.(is)
+    log_ts = log10.(ts)
+    
+    # Roof points
+    max_i = maximum(is) * 1.5
+    roof_is_val = [0.1, ridge_i, max_i]
+    roof_ts_val = [0.1 * bw_t_s, peak_tflops, peak_tflops]
+    
+    log_roof_is = log10.(roof_is_val)
+    log_roof_ts = log10.(roof_ts_val)
+    
+    println("\n  Roofline Analysis ($(device)) [Log-Log]:")
+    p = lineplot(log_roof_is, log_roof_ts, 
+        title="$(device) Roofline", xlabel="Log10(Intensity: FLOP/Byte)", ylabel="Log10(TFLOPS)", 
+        color=:white, width=70, height=12, name="Theoretical")
+    
+    scatterplot!(p, log_is, log_ts, color=:cyan, marker=:circle, name="Measured")
+    
+    # Vertical Ridge Line
+    ridge_log = log10(ridge_i)
+    v_xs = fill(ridge_log, 10)
+    v_ys = range(minimum(log_ts), log10(peak_tflops), length=10)
+    lineplot!(p, v_xs, v_ys, color=:red, name="Ridge")
+    
     show(stdout, MIME"text/plain"(), p)
     println()
-    println("  Guide: Points on the slope are Bandwidth-Bound; points on the ceiling are Compute-Bound.")
+    println("  Ridge Point: Intensity = $(@sprintf("%.2f", ridge_i)) FLOP/Byte")
+end
+
+function _render_bandwidth_util_plot(dat; device="GPU", peak_bw_gb=500.0)
+    # Bandwidth achieved = (Intensity * Throughput)
+    # But more accurately for MatMul: BW = (6 * TFLOPS * 10^12) / N (in Bytes/s)
+    ns = device == "GPU" ? (isempty(dat.gpu_data) ? Int[] : first(values(dat.gpu_data))[1]) : dat.cpu_ns
+    ts = device == "GPU" ? (isempty(dat.gpu_data) ? Float64[] : first(values(dat.gpu_data))[2]) : dat.cpu_tflops
+    
+    isempty(ns) && return
+    
+    bw_achieved = (6.0 .* ts .* 1e12) ./ ns
+    bw_gib = bw_achieved ./ (1024.0^3)
+    util = (bw_gib ./ peak_bw_gb) .* 100.0
+    
+    println("\n  Memory Bandwidth Utilization ($(device)):")
+    p = lineplot(ns, util, title="BW Utilization (%) vs N", xlabel="N", ylabel="Utilization (%)", color=:magenta, width=70, height=12)
+    show(stdout, MIME"text/plain"(), p)
+    println()
+end
+
+function _render_latency_histogram(bench_data)
+    if !haskey(bench_data, "matmul") || haskey(bench_data["matmul"], "error")
+        return
+    end
+    
+    m = bench_data["matmul"]
+    if !haskey(m, "samples")
+        return
+    end
+    
+    samples_ms = m["samples"] .* 1000.0
+    println("\n  Latency Distribution (MatMul FP32):")
+    p = histogram(samples_ms, bins=15, title="Kernel Latency", xlabel="Time (ms)", color=:yellow, width=70, height=10)
+    show(stdout, MIME"text/plain"(), p)
+    println()
 end
 
 function show_results(path::String)
@@ -166,11 +234,14 @@ function show_results(path::String)
     # Header
     sep = "─"^70
     println(sep)
-    println("  GPUBenchmark.jl Summary Report")
+    println("  GPUBenchmark.jl SUMMARY REPORT")
     println("  Node:  $(meta["hostname"])")
     println("  Time:  $(results["timestamp"])")
     println("  CUDA:  $(meta["cuda_runtime"]) (Driver: $(meta["cuda_driver"]))")
     println(sep)
+
+    # Latency Histogram if available
+    _render_latency_histogram(bench_data)
 
     # Benchmark table
     tasks = String[]; perf = String[]; details = String[]
@@ -243,7 +314,10 @@ function show_results(path::String)
             end
             
             _render_roofline(dat, device="GPU", peak_tflops=peak_gpu, peak_bw_gb=bw_gpu)
+            _render_bandwidth_util_plot(dat, device="GPU", peak_bw_gb=bw_gpu)
+            
             _render_roofline(dat, device="CPU", peak_tflops=peak_cpu, peak_bw_gb=bw_cpu)
+            _render_bandwidth_util_plot(dat, device="CPU", peak_bw_gb=bw_cpu)
             
         catch e
             @warn "Could not render scaling/roofline plots" exception=e

@@ -12,7 +12,7 @@ function generate_text_report(results, output_dir)
     filename = joinpath(output_dir, "summary.txt")
     open(filename, "w") do io
         println(io, "================================================================")
-        println(io, "             GPU HEALTH CERTIFICATE - $(results["timestamp"])")
+        println(io, "           GPU BENCHMARK ANALYSIS SUMMARY - $(results["timestamp"])")
         println(io, "================================================================")
         println(io, "")
         println(io, "[1. NODE ENVIRONMENT]")
@@ -104,21 +104,25 @@ function export_scaling_dat(scaling_results, run_dir)
     open(dat_file, "w") do io
         println(io, "# GPUBenchmark Scaling Data")
         println(io, "# Algorithm: ", get(scaling_results, "algorithm", "unknown"))
-        println(io, "# N\tMode\tID/Threads\tTime(s)\tTFLOPS")
+        println(io, "# N\tMode\tID/Threads\tTime(s)\tTFLOPS\tMinTime\tMaxTime")
         
         # CPU results
         cpu_res = get(scaling_results, "cpu_results", [])
         for res in cpu_res
-            @printf(io, "%d\tCPU\t%d\t%.6f\t%.4f\n", 
-                get(res, "n", 0), get(res, "threads", 0), get(res, "time_s", 0.0), get(res, "tflops", 0.0))
+            @printf(io, "%d\tCPU\t%d\t%.6f\t%.4f\t%.6f\t%.6f\n", 
+                get(res, "n", 0), get(res, "threads", 0), 
+                get(res, "time_s", 0.0), get(res, "tflops", 0.0),
+                get(res, "min_time", 0.0), get(res, "max_time", 0.0))
         end
         
         # GPU results
         gpu_res = get(scaling_results, "gpu_results", Dict())
         for (id, runs) in gpu_res
             for res in runs
-                @printf(io, "%d\tGPU\t%d\t%.6f\t%.4f\n", 
-                    get(res, "n", 0), id, get(res, "time_s", 0.0), get(res, "tflops", 0.0))
+                @printf(io, "%d\tGPU\t%d\t%.6f\t%.4f\t%.6f\t%.6f\n", 
+                    get(res, "n", 0), id, 
+                    get(res, "time_s", 0.0), get(res, "tflops", 0.0),
+                    get(res, "min_time", 0.0), get(res, "max_time", 0.0))
             end
         end
     end

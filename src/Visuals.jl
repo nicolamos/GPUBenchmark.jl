@@ -155,12 +155,12 @@ function _render_roofline(dat; device="GPU", peak_tflops=10.0, peak_bw_gb=500.0)
     bw_t_s  = (peak_bw_gb * 1024^3) / 1e12   # bandwidth ceiling slope (TFLOPS per FLOP/Byte)
     ridge_i = peak_tflops / bw_t_s             # ridge point
 
-    # Always start 2 decades below the ridge so the memory-bound slope is visible
-    # even when all measured points fall in the compute-bound regime.
-    x_low  = max(0.1, ridge_i / 100)
-    x_high = maximum(is) * 2.0
-    y_low  = x_low * bw_t_s    # TFLOPS at x_low on the BW slope
-    y_high = peak_tflops * 1.5  # headroom above peak
+    # Snap axis bounds to exact powers of 10 so UnicodePlots generates clean tick labels
+    # (e.g. 10^0, 10^1 instead of 10^0.133).  Start ~2 decades below the ridge.
+    x_low  = exp10(floor(log10(max(0.01, ridge_i / 100))))
+    x_high = exp10(ceil(log10(maximum(is) * 2.0)))
+    y_low  = exp10(floor(log10(max(1e-3, x_low * bw_t_s))))
+    y_high = exp10(ceil(log10(peak_tflops * 1.5)))
 
     n_pts  = 60
     roof_is = exp10.(range(log10(x_low), log10(x_high), length=n_pts))

@@ -116,30 +116,43 @@ function (@main)(ARGS)
             end
         end
 
-        for name in to_run
-            if Base.invokelatest(haskey, REGISTRY, name)
-                @info "STEP: Running task '$name'..."
-                try
-                    # Legacy tasks expect a Dict of string keys
-                    task_args = Dict(string(k) => v for (k, v) in pairs(parsed_args))
-                    task_args["size"] = size
+        interrupted = false
+        try
+            for name in to_run
+                if Base.invokelatest(haskey, REGISTRY, name)
+                    @info "STEP: Running task '$name'..."
+                    try
+                        # Legacy tasks expect a Dict of string keys
+                        task_args = Dict(string(k) => v for (k, v) in pairs(parsed_args))
+                        task_args["size"] = size
 
-                    results["benchmarks"][name] = Base.invokelatest(REGISTRY[name].run_func, task_args)
+                        results["benchmarks"][name] = Base.invokelatest(REGISTRY[name].run_func, task_args)
 
-                    if name == "matmul" && !haskey(results["benchmarks"][name], "error")
-                        @info "  - Result: $(round(results["benchmarks"][name]["tflops"], digits=2)) TFLOPS"
+                        if name == "matmul" && !haskey(results["benchmarks"][name], "error")
+                            @info "  - Result: $(round(results["benchmarks"][name]["tflops"], digits=2)) TFLOPS"
+                        end
+                        Base.invokelatest(cleanup)
+                    catch e
+                        e isa InterruptException && rethrow()
+                        @error "Task '$name' failed!" exception=e
+                        results["benchmarks"][name] = Dict("error" => string(e))
                     end
-                    Base.invokelatest(cleanup)
-                catch e
-                    @error "Task '$name' failed!" exception=e
-                    results["benchmarks"][name] = Dict("error" => string(e))
+                else
+                    @warn "Task '$name' not found in registry. Skipping."
                 end
+            end
+        catch e
+            if e isa InterruptException
+                println()
+                @warn "Benchmark interrupted (Ctrl-C) — saving partial results..."
+                interrupted = true
             else
-                @warn "Task '$name' not found in registry. Skipping."
+                rethrow()
             end
         end
 
-        # 8. POST-FLIGHT
+        # 8. POST-FLIGHT (runs whether complete or interrupted)
+        interrupted && (results["interrupted"] = true)
         @info "STEP: Finalizing reports..."
         try
             Base.invokelatest(cleanup)
@@ -184,14 +197,14 @@ function (@main)(ARGS)
         end
 
         println("-"^60)
-        @info "[DONE] BENCHMARK COMPLETE"
+        @info (interrupted ? "[DONE] BENCHMARK INTERRUPTED — partial results saved" : "[DONE] BENCHMARK COMPLETE")
     end
 
     finally
         close(log_io)
     end
 
-    return 0
+    return interrupted ? 130 : 0
 end
 
 # Backward compatibility

@@ -158,7 +158,7 @@ function _render_roofline(dat; device="GPU", peak_tflops=10.0, peak_bw_gb=500.0)
     # Snap axis bounds to exact powers of 10 so UnicodePlots generates clean tick labels
     # (e.g. 10^0, 10^1 instead of 10^0.133).  Start ~2 decades below the ridge.
     x_low  = exp10(floor(log10(max(0.01, ridge_i / 100))))
-    x_high = exp10(ceil(log10(maximum(is) * 2.0)))
+    x_high = exp10(ceil(log10(maximum(is))))
     y_low  = exp10(floor(log10(max(1e-3, x_low * bw_t_s))))
     y_high = exp10(ceil(log10(peak_tflops * 1.5)))
 

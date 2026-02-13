@@ -74,6 +74,7 @@ function (@main)(ARGS)
     # 5. CONFIGURE LOGGING
     log_file = joinpath(run_dir, "benchmark.log")
     min_level = parsed_args.verbose ? Logging.Debug : Logging.Info
+    interrupted = false
     log_io = open(log_file, "w")
     try
     tee_logger = MinLevelLogger(
@@ -116,7 +117,6 @@ function (@main)(ARGS)
             end
         end
 
-        interrupted = false
         try
             for name in to_run
                 if Base.invokelatest(haskey, REGISTRY, name)

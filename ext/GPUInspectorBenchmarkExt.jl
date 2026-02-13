@@ -171,19 +171,27 @@ end
 
 function _save_roofline_plots(dat, output_path, format, peak_gpu, peak_cpu, bw_gpu, bw_cpu)
     fig = Figure(size=(800, 800))
-    
+
+    # Build a log-uniform sample split exactly at the ridge so the visual knee
+    # on a log-scale axis aligns precisely with the vlines! marker.
+    function _roof_sample(x_min, ridge, x_max, n=100)
+        below = exp10.(range(log10(x_min), log10(ridge), length=n))
+        above = exp10.(range(log10(ridge), log10(x_max),  length=n))
+        vcat(below, above[2:end])
+    end
+
     # GPU Roofline
     ax_gpu = Axis(fig[1, 1], title="GPU Roofline Model", xlabel="Intensity (FLOP/Byte)", ylabel="TFLOPS", xscale=log10, yscale=log10, xgridvisible=true, ygridvisible=true)
     ns_g = isempty(dat.gpu_data) ? Int[] : first(values(dat.gpu_data))[1]
     ts_g = isempty(dat.gpu_data) ? Float64[] : first(values(dat.gpu_data))[2]
     if !isempty(ns_g)
         is = ns_g ./ 6.0
-        max_i = maximum(is) * 1.5
-        roof_is = range(0.1, max_i, length=200)
-        bw_T_s = (bw_gpu * 1024^3) / 1e12
-        roof_ts = [min(peak_gpu, i * bw_T_s) for i in roof_is]
+        bw_T_s  = (bw_gpu * 1024^3) / 1e12
         ridge_i = peak_gpu / bw_T_s
-        
+        max_i   = maximum(is) * 1.5
+        roof_is = _roof_sample(0.1, ridge_i, max_i)
+        roof_ts = [min(peak_gpu, i * bw_T_s) for i in roof_is]
+
         lines!(ax_gpu, roof_is, roof_ts, color=:black, linewidth=2, label="Theoretical Roof")
         vlines!(ax_gpu, [ridge_i], color=:red, linestyle=:dash, label="Ridge Point ($(@sprintf("%.2f", ridge_i)))")
         scatter!(ax_gpu, is, ts_g, color=:cyan, markersize=12, label="Measured Scaling")
@@ -193,13 +201,13 @@ function _save_roofline_plots(dat, output_path, format, peak_gpu, peak_cpu, bw_g
     # CPU Roofline
     ax_cpu = Axis(fig[2, 1], title="CPU Roofline Model", xlabel="Intensity (FLOP/Byte)", ylabel="TFLOPS", xscale=log10, yscale=log10, xgridvisible=true, ygridvisible=true)
     if !isempty(dat.cpu_ns)
-        is_c = dat.cpu_ns ./ 6.0
-        max_ic = maximum(is_c) * 1.5
-        roof_isc = range(0.1, max_ic, length=200)
+        is_c    = dat.cpu_ns ./ 6.0
         bw_T_sc = (bw_cpu * 1024^3) / 1e12
-        roof_tsc = [min(peak_cpu, i * bw_T_sc) for i in roof_isc]
         ridge_ic = peak_cpu / bw_T_sc
-        
+        max_ic   = maximum(is_c) * 1.5
+        roof_isc = _roof_sample(0.1, ridge_ic, max_ic)
+        roof_tsc = [min(peak_cpu, i * bw_T_sc) for i in roof_isc]
+
         lines!(ax_cpu, roof_isc, roof_tsc, color=:black, linewidth=2, label="Theoretical Roof")
         vlines!(ax_cpu, [ridge_ic], color=:red, linestyle=:dash, label="Ridge Point ($(@sprintf("%.2f", ridge_ic)))")
         scatter!(ax_cpu, is_c, dat.cpu_tflops, color=:blue, markersize=12, label="Measured Scaling")

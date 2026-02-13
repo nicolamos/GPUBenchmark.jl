@@ -152,25 +152,29 @@ function _render_roofline(dat; device="GPU", peak_tflops=10.0, peak_bw_gb=500.0)
     is = is[valid]; ts = ts[valid]
     isempty(is) && return
 
-    bw_t_s   = (peak_bw_gb * 1024^3) / 1e12   # bandwidth ceiling slope (TFLOPS per FLOP/Byte)
-    ridge_i  = peak_tflops / bw_t_s             # ridge point: above this the kernel is compute-bound
+    bw_t_s  = (peak_bw_gb * 1024^3) / 1e12   # bandwidth ceiling slope (TFLOPS per FLOP/Byte)
+    ridge_i = peak_tflops / bw_t_s             # ridge point
 
-    # Piecewise theoretical roofline: BW slope up to ridge, flat at peak
-    min_i = minimum(is) * 0.5
-    max_i = maximum(is) * 2.0
-    n_pts = 60
-    roof_is = exp10.(range(log10(min_i), log10(max_i), length=n_pts))
+    # Always start 2 decades below the ridge so the memory-bound slope is visible
+    # even when all measured points fall in the compute-bound regime.
+    x_low  = max(0.1, ridge_i / 100)
+    x_high = maximum(is) * 2.0
+    y_low  = x_low * bw_t_s    # TFLOPS at x_low on the BW slope
+    y_high = peak_tflops * 1.5  # headroom above peak
+
+    n_pts  = 60
+    roof_is = exp10.(range(log10(x_low), log10(x_high), length=n_pts))
     roof_ts = [min(peak_tflops, i * bw_t_s) for i in roof_is]
 
-    # Ridge vertical line (two endpoints, UnicodePlots interpolates)
     ridge_xs = [ridge_i, ridge_i]
-    ridge_ys = [minimum(ts) * 0.5, peak_tflops]
+    ridge_ys = [y_low, y_high]
 
     println("\n  Roofline Analysis ($(device)) — log/log axes:")
     p = lineplot(roof_is, roof_ts;
         title="$(device) Roofline", xlabel="Intensity (FLOP/Byte)", ylabel="TFLOPS",
         color=:white, width=70, height=12,
         xscale=:log10, yscale=:log10,
+        xlim=(x_low, x_high), ylim=(y_low, y_high),
         name="Theoretical")
     lineplot!(p, ridge_xs, ridge_ys; color=:red, name="Ridge ($(@sprintf("%.1f", ridge_i)) F/B)")
     scatterplot!(p, is, ts; color=:cyan, marker=:circle, name="Measured")

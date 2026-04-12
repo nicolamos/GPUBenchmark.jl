@@ -23,6 +23,7 @@ using .Engine
 # Built-in benchmarks (statically included → precompiled)
 include("benchmarks/matmul.jl")
 include("benchmarks/tensorcore.jl")
+include("benchmarks/bandwidth.jl")
 include("benchmarks/scaling.jl")
 include("benchmarks/sysinfo.jl")
 

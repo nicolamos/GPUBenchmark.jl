@@ -140,66 +140,107 @@ function _render_scaling_plots(dat)
     end
 end
 
-function _render_roofline(dat; device="GPU", peak_tflops=10.0, peak_bw_gb=500.0)
-    # Arithmetic intensity for FP32 matmul NxN: 2N³ FLOPs / 12N² bytes = N/6 FLOP/byte
-    ns = device == "GPU" ? (isempty(dat.gpu_data) ? Int[] : first(values(dat.gpu_data))[1]) : dat.cpu_ns
-    ts = device == "GPU" ? (isempty(dat.gpu_data) ? Float64[] : first(values(dat.gpu_data))[2]) : dat.cpu_tflops
+"""
+    _render_roofline(ns, ts; title, peak_tflops, peak_bw_gb, bw_source)
 
+Plot a roofline model for the given (ns, ts) measurements.
+`bw_source` is a label shown in the ridge annotation; pass "default" to
+emit a warning that the bandwidth estimate may be inaccurate.
+"""
+function _render_roofline(ns, ts; title="Roofline", peak_tflops=10.0, peak_bw_gb=500.0, bw_source="default")
+    # Arithmetic intensity for FP32 matmul NxN: 2N³ FLOPs / 12N² bytes = N/6 FLOP/byte
     isempty(ns) && return
 
     is = ns ./ 6.0
     valid = is .> 0
-    is = is[valid]; ts = ts[valid]
+    is = is[valid]; ts_v = ts[valid]
     isempty(is) && return
 
     bw_t_s  = (peak_bw_gb * 1024^3) / 1e12   # bandwidth ceiling slope (TFLOPS per FLOP/Byte)
     ridge_i = peak_tflops / bw_t_s             # ridge point
 
     # Snap axis bounds to exact powers of 10 so UnicodePlots generates clean tick labels
-    # (e.g. 10^0, 10^1 instead of 10^0.133).  Start ~2 decades below the ridge.
     x_low  = exp10(floor(log10(max(0.01, ridge_i / 100))))
     x_high = exp10(ceil(log10(maximum(is))))
     y_low  = exp10(floor(log10(max(1e-3, x_low * bw_t_s))))
     y_high = exp10(ceil(log10(peak_tflops * 1.5)))
 
-    n_pts  = 60
+    n_pts   = 60
     roof_is = exp10.(range(log10(x_low), log10(x_high), length=n_pts))
     roof_ts = [min(peak_tflops, i * bw_t_s) for i in roof_is]
 
     ridge_xs = [ridge_i, ridge_i]
     ridge_ys = [y_low, y_high]
 
-    println("\n  Roofline Analysis ($(device)) — log/log axes:")
+    bw_note = bw_source == "default" ?
+        " [⚠ stima — installa GPUInspector.jl]" :
+        " [via $bw_source]"
+
+    println("\n  Roofline Analysis ($title) — log/log axes:")
     p = lineplot(roof_is, roof_ts;
-        title="$(device) Roofline", xlabel="Intensity (FLOP/Byte)", ylabel="TFLOPS",
+        title="$title Roofline", xlabel="Intensity (FLOP/Byte)", ylabel="TFLOPS",
         color=:white, width=70, height=12,
         xscale=:log10, yscale=:log10,
         xlim=(x_low, x_high), ylim=(y_low, y_high),
         name="Theoretical")
-    lineplot!(p, ridge_xs, ridge_ys; color=:red, name="Ridge ($(@sprintf("%.1f", ridge_i)) F/B)")
-    scatterplot!(p, is, ts; color=:cyan, marker=:circle, name="Measured")
+    lineplot!(p, ridge_xs, ridge_ys;
+        color=:red, name="Ridge ($(@sprintf("%.1f", ridge_i)) F/B)")
+    scatterplot!(p, is, ts_v; color=:cyan, marker=:circle, name="Measured")
 
     show(stdout, MIME"text/plain"(), p)
     println()
     println("  Ridge: below $(@sprintf("%.1f", ridge_i)) FLOP/Byte → memory-bound; above → compute-bound")
+    if bw_source == "default"
+        println("  ⚠  Banda GPU non misurata: usando $(@sprintf("%.0f", peak_bw_gb)) GB/s come fallback — ridge point inaccurato.")
+    end
 end
 
-function _render_bandwidth_util_plot(dat; device="GPU", peak_bw_gb=500.0)
-    # Bandwidth achieved = (Intensity * Throughput)
-    # But more accurately for MatMul: BW = (6 * TFLOPS * 10^12) / N (in Bytes/s)
-    ns = device == "GPU" ? (isempty(dat.gpu_data) ? Int[] : first(values(dat.gpu_data))[1]) : dat.cpu_ns
-    ts = device == "GPU" ? (isempty(dat.gpu_data) ? Float64[] : first(values(dat.gpu_data))[2]) : dat.cpu_tflops
-    
+function _render_bandwidth_util_plot(ns, ts; title="BW Utilization", peak_bw_gb=500.0)
+    # BW achieved per matmul: BW = (6 * TFLOPS * 10^12) / N  (Bytes/s)
     isempty(ns) && return
-    
+
     bw_achieved = (6.0 .* ts .* 1e12) ./ ns
     bw_gib = bw_achieved ./ (1024.0^3)
     util = (bw_gib ./ peak_bw_gb) .* 100.0
-    
-    println("\n  Memory Bandwidth Utilization ($(device)):")
-    p = lineplot(ns, util, title="BW Utilization (%) vs N", xlabel="N", ylabel="Utilization (%)", color=:magenta, width=70, height=12)
+
+    println("\n  Memory Bandwidth Utilization ($title):")
+    p = lineplot(ns, util,
+        title="BW Utilization (%) vs N", xlabel="N", ylabel="Utilization (%)",
+        color=:magenta, width=70, height=12)
     show(stdout, MIME"text/plain"(), p)
     println()
+end
+
+function _render_speedup_plot(dat)
+    isempty(dat.cpu_ns) && return
+    isempty(dat.gpu_data) && return
+
+    cpu_by_n = Dict(zip(dat.cpu_ns, dat.cpu_tflops))
+
+    # Max GPU TFLOPS at each N across all devices
+    n_vals   = _aggregate_per_n(dat.gpu_data)
+    gpu_by_n = Dict(n => maximum(ts) for (n, ts) in n_vals)
+
+    shared_ns = sort(collect(intersect(keys(cpu_by_n), keys(gpu_by_n))))
+    length(shared_ns) < 2 && return
+
+    speedups = [gpu_by_n[n] / cpu_by_n[n] for n in shared_ns]
+
+    println("\n  GPU vs CPU Speedup (comparison range):")
+    p = lineplot(shared_ns, speedups;
+        title="GPU/CPU Speedup vs N", xlabel="N", ylabel="Speedup (×)",
+        color=:green, width=70, height=10,
+        name="Speedup")
+    lineplot!(p, [minimum(shared_ns), maximum(shared_ns)], [1.0, 1.0];
+        color=:red, name="1× (parity)")
+    show(stdout, MIME"text/plain"(), p)
+    println()
+
+    peak_sp  = maximum(speedups)
+    peak_idx = argmax(speedups)
+    xover    = findfirst(sp -> sp > 1.0, speedups)
+    @printf("  Peak speedup: %.1f× at N=%d\n", peak_sp, shared_ns[peak_idx])
+    !isnothing(xover) && @printf("  GPU > CPU from N=%d onwards\n", shared_ns[xover])
 end
 
 function _render_latency_histogram(bench_data)
@@ -258,6 +299,16 @@ function show_results(path::String)
         end
     end
 
+    if haskey(bench_data, "bandwidth")
+        bw = bench_data["bandwidth"]
+        if !haskey(bw, "error")
+            haskey(bw, "gpu_bandwidth_gibs") &&
+                add_row!("BW GPU (STREAM)", @sprintf("%.1f GiB/s", bw["gpu_bandwidth_gibs"]), "triad A=B+s*C")
+            haskey(bw, "cpu_bandwidth_gibs") &&
+                add_row!("BW CPU (STREAM)", @sprintf("%.1f GiB/s", bw["cpu_bandwidth_gibs"]), "triad A=B+s*C")
+        end
+    end
+
     if haskey(bench_data, "matmul")
         m = bench_data["matmul"]
         !haskey(m, "error") && add_row!("MatMul (FP32)",
@@ -267,16 +318,26 @@ function show_results(path::String)
 
     if haskey(bench_data, "scaling")
         s = bench_data["scaling"]
-        !haskey(s, "error") && add_row!("Scaling",
-            @sprintf("%.2f TFLOPS (GPU peak)", get(s, "peak_gpu_tflops", 0.0)),
-            @sprintf("CPU: %.2f", get(s, "peak_cpu_tflops", 0.0)))
+        if !haskey(s, "error")
+            add_row!("Scaling",
+                @sprintf("%.2f TFLOPS (GPU peak)", get(s, "peak_gpu_tflops", 0.0)),
+                @sprintf("CPU: %.2f", get(s, "peak_cpu_tflops", 0.0)))
 
-        # Power Efficiency if available
-        if haskey(bench_data, "gpuinspector")
-            gi = bench_data["gpuinspector"]
-            if haskey(gi, "avg_power_w") && gi["avg_power_w"] > 0
-                eff = (get(s, "peak_gpu_tflops", 0.0) * 1000) / gi["avg_power_w"]
-                add_row!("Efficiency", @sprintf("%.2f GFLOPS/W", eff), "Peak Perf/Avg Power")
+            peak_gpu_s = get(s, "peak_gpu_tflops", 0.0)
+            peak_cpu_s = get(s, "peak_cpu_tflops", 0.0)
+            if peak_gpu_s > 0 && peak_cpu_s > 0
+                add_row!("Peak Speedup",
+                    @sprintf("%.1f×  (GPU/CPU)", peak_gpu_s / peak_cpu_s),
+                    "peak-over-peak (upper bound)")
+            end
+
+            # Power Efficiency if available
+            if haskey(bench_data, "gpuinspector")
+                gi = bench_data["gpuinspector"]
+                if haskey(gi, "avg_power_w") && gi["avg_power_w"] > 0
+                    eff = (peak_gpu_s * 1000) / gi["avg_power_w"]
+                    add_row!("Efficiency", @sprintf("%.2f GFLOPS/W", eff), "Peak Perf/Avg Power")
+                end
             end
         end
     end
@@ -301,22 +362,56 @@ function show_results(path::String)
         try
             dat = parse_scaling_dat(dat_path)
             _render_scaling_plots(dat)
-            
-            # Use results for roofs
-            peak_gpu = 10.0; peak_cpu = 1.0; bw_gpu = 500.0; bw_cpu = 50.0
+
+            # Peaks and bandwidth
+            peak_gpu = 10.0; peak_cpu = 1.0
+            bw_gpu = 500.0; bw_source = "default"
+            bw_cpu = 50.0
+
             if haskey(bench_data, "scaling")
                 peak_gpu = get(bench_data["scaling"], "peak_gpu_tflops", 10.0)
                 peak_cpu = get(bench_data["scaling"], "peak_cpu_tflops", 1.0)
             end
-            if haskey(bench_data, "gpuinspector")
-                bw_gpu = get(bench_data["gpuinspector"], "memory_bandwidth", 500.0)
+
+            # Bandwidth priority: built-in STREAM > GPUInspector > hardcoded default
+            if haskey(bench_data, "bandwidth")
+                bw = bench_data["bandwidth"]
+                if haskey(bw, "gpu_bandwidth_gibs")
+                    bw_gpu    = bw["gpu_bandwidth_gibs"]
+                    bw_source = "STREAM triad"
+                end
+                if haskey(bw, "cpu_bandwidth_gibs")
+                    bw_cpu = bw["cpu_bandwidth_gibs"]
+                end
             end
-            
-            _render_roofline(dat, device="GPU", peak_tflops=peak_gpu, peak_bw_gb=bw_gpu)
-            _render_bandwidth_util_plot(dat, device="GPU", peak_bw_gb=bw_gpu)
-            
-            _render_roofline(dat, device="CPU", peak_tflops=peak_cpu, peak_bw_gb=bw_cpu)
-            _render_bandwidth_util_plot(dat, device="CPU", peak_bw_gb=bw_cpu)
+            if haskey(bench_data, "gpuinspector")
+                # GPUInspector is more thorough — takes priority over built-in STREAM
+                gi_bw = get(bench_data["gpuinspector"], "memory_bandwidth", nothing)
+                if !isnothing(gi_bw)
+                    bw_gpu    = gi_bw
+                    bw_source = "GPUInspector"
+                end
+            end
+
+            # GPU: one roofline per device (sorted by device ID)
+            sorted_gpu = sort(collect(dat.gpu_data), by = x -> tryparse(Int, x[1]) |> (v -> isnothing(v) ? 0 : v))
+            for (gpu_id, (ns, ts, mins, maxs)) in sorted_gpu
+                peak_i = isempty(ts) ? peak_gpu : maximum(ts)
+                _render_roofline(ns, ts;
+                    title="GPU $gpu_id", peak_tflops=peak_i,
+                    peak_bw_gb=bw_gpu, bw_source=bw_source)
+                _render_bandwidth_util_plot(ns, ts;
+                    title="GPU $gpu_id", peak_bw_gb=bw_gpu)
+            end
+
+            # Speedup comparison (comparison range only)
+            _render_speedup_plot(dat)
+
+            # CPU roofline
+            _render_roofline(dat.cpu_ns, dat.cpu_tflops;
+                title="CPU", peak_tflops=peak_cpu, peak_bw_gb=bw_cpu, bw_source="estimated")
+            _render_bandwidth_util_plot(dat.cpu_ns, dat.cpu_tflops;
+                title="CPU", peak_bw_gb=bw_cpu)
             
         catch e
             @warn "Could not render scaling/roofline plots" exception=e

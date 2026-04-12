@@ -52,6 +52,16 @@ function generate_text_report(results, output_dir)
         println(io, "")
         println(io, "[3. PERFORMANCE & EFFICIENCY]")
         
+        if haskey(benchmarks, "bandwidth")
+            bw = benchmarks["bandwidth"]
+            if !haskey(bw, "error")
+                haskey(bw, "gpu_bandwidth_gibs") &&
+                    @printf(io, "  BW GPU (STREAM): %.1f GiB/s\n", bw["gpu_bandwidth_gibs"])
+                haskey(bw, "cpu_bandwidth_gibs") &&
+                    @printf(io, "  BW CPU (STREAM): %.1f GiB/s\n", bw["cpu_bandwidth_gibs"])
+            end
+        end
+
         if haskey(benchmarks, "matmul")
             m = benchmarks["matmul"]
             if !haskey(m, "error")
@@ -64,6 +74,49 @@ function generate_text_report(results, output_dir)
             if !haskey(s, "error")
                 @printf(io, "  Peak (GPU):    %.2f TFLOPS\n", get(s, "peak_gpu_tflops", 0.0))
                 @printf(io, "  Peak (CPU):    %.2f TFLOPS\n", get(s, "peak_cpu_tflops", 0.0))
+
+                # CPU vs GPU comparison table (shared N values only)
+                cpu_results = get(s, "cpu_results", [])
+                gpu_results = get(s, "gpu_results", Dict())
+                if !isempty(cpu_results) && !isempty(gpu_results)
+                    cpu_by_n = Dict(r["n"] => r["tflops"] for r in cpu_results)
+                    # Max GPU TFLOPS at each N across all devices
+                    gpu_by_n = Dict{Int, Float64}()
+                    for (_, runs) in gpu_results
+                        for r in runs
+                            n, t = r["n"], r["tflops"]
+                            gpu_by_n[n] = max(get(gpu_by_n, n, 0.0), t)
+                        end
+                    end
+                    shared_ns = sort(collect(intersect(keys(cpu_by_n), keys(gpu_by_n))))
+
+                    if !isempty(shared_ns)
+                        speedups = [gpu_by_n[n] / cpu_by_n[n] for n in shared_ns]
+                        peak_sp  = maximum(speedups)
+                        xover    = findfirst(sp -> sp > 1.0, speedups)
+
+                        @printf(io, "  Peak Speedup:  %.1f× (GPU/CPU)\n", peak_sp)
+                        !isnothing(xover) && @printf(io, "  Crossover N:   %d\n", shared_ns[xover])
+
+                        println(io, "")
+                        println(io, "[3b. CPU vs GPU COMPARISON]")
+                        @printf(io, "  %-10s  %-12s  %-12s  %s\n", "N", "CPU TFLOPS", "GPU TFLOPS", "Speedup")
+                        println(io, "  " * "─"^50)
+                        for (n, sp) in zip(shared_ns, speedups)
+                            @printf(io, "  %-10d  %-12.3f  %-12.3f  %.1f×\n",
+                                n, cpu_by_n[n], gpu_by_n[n], sp)
+                        end
+                        gpu_extended = get(s, "gpu_extended_sizes", Int[])
+                        gpu_ext_data = [n for n in gpu_extended if haskey(gpu_by_n, n)]
+                        if !isempty(gpu_ext_data)
+                            println(io, "  " * "─"^50)
+                            println(io, "  GPU extended (no CPU baseline):")
+                            for n in gpu_ext_data
+                                @printf(io, "  %-10d  %-12s  %-12.3f  —\n", n, "—", gpu_by_n[n])
+                            end
+                        end
+                    end
+                end
             end
         end
 

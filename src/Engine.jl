@@ -6,7 +6,9 @@ using Logging
 using ..Core
 using ..Visuals # For show_results call in show_latest
 
-export calculate_reasonable_size, calculate_scaling_sizes, discover_benchmarks, load_extension_dependencies, show_latest
+export calculate_reasonable_size, calculate_scaling_sizes,
+       calculate_scaling_sizes_cpu, calculate_scaling_sizes_gpu,
+       discover_benchmarks, load_extension_dependencies, show_latest
 
 function calculate_reasonable_size(fraction=0.4)
     if !CUDA.functional()
@@ -33,6 +35,42 @@ function calculate_scaling_sizes(fraction=0.6)
     max_n = calculate_reasonable_size(fraction)
     # Generate 5 logarithmic steps up to max_n
     return [max(1024, div(max_n, 2^i)) for i in 4:-1:0] |> unique |> sort
+end
+
+"""
+    calculate_scaling_sizes_cpu(fraction=0.4)
+
+Auto-size the CPU scaling range based on free system RAM only.
+Produces 5 logarithmic steps up to the largest N that fits in `fraction`
+of free RAM with three FP32 N×N matrices (12N² bytes total).
+"""
+function calculate_scaling_sizes_cpu(fraction=0.4)
+    sys_mem = Sys.free_memory()
+    max_n = isqrt(Int(floor((sys_mem * fraction) / 12)))
+    max_n = div(max_n, 128) * 128
+    max_n = max(1024, max_n)
+    @debug "CPU scaling sizes" ram_free=Base.format_bytes(sys_mem) fraction=fraction max_n=max_n
+    return [max(1024, div(max_n, 2^i)) for i in 4:-1:0] |> unique |> sort
+end
+
+"""
+    calculate_scaling_sizes_gpu(fraction=0.6)
+
+Auto-size the GPU scaling range based on free VRAM of the current device.
+Produces 5 logarithmic steps up to the largest N that fits in `fraction`
+of free VRAM with three FP32 N×N matrices (12N² bytes total).
+Returns an empty array if CUDA is not functional.
+"""
+function calculate_scaling_sizes_gpu(fraction=0.6)
+    if !CUDA.functional()
+        return Int[]
+    end
+    gpu_mem = CUDA.available_memory()
+    max_n = isqrt(Int(floor((gpu_mem * fraction) / 12)))
+    max_n = div(max_n, 128) * 128
+    max_n = max(4096, max_n)
+    @debug "GPU scaling sizes" vram_free=Base.format_bytes(gpu_mem) fraction=fraction max_n=max_n
+    return [max(4096, div(max_n, 2^i)) for i in 4:-1:0] |> unique |> sort
 end
 
 function discover_benchmarks(plugin_arg=nothing)

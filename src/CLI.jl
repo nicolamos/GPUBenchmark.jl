@@ -9,7 +9,23 @@ export parse_commandline, list_benchmarks
 
 function parse_commandline(args)
     s = ArgParseSettings(
-        description = "Julia GPU Benchmark Suite - Production Health Check",
+        description = """Julia GPU Benchmark Suite — Production Health Check
+
+  Tasks (positional): sysinfo, matmul, tensorcore, scaling, gpuinspector, all
+    sysinfo      Print CPU, GPU, and memory info (fast, no computation)
+    matmul       Single FP32 matmul at one size (--size or auto)
+    tensorcore   Mixed-precision Tensor Core benchmark (requires SM ≥ 7.0)
+    scaling      GEMM scaling across sizes: CPU comparison + GPU extended range
+    gpuinspector Full hardware telemetry via GPUInspector.jl (requires extension)
+    all          Run all of the above
+
+  Examples:
+    gpubenchmark scaling
+    gpubenchmark scaling --no-cpu --gpu-fraction 0.7
+    gpubenchmark scaling --sizes 1024,4096,16384
+    gpubenchmark matmul --size 8192
+    gpubenchmark all --quiet
+    gpubenchmark --show results/mynode/2026-04-12_120000""",
         autofix_names = true,
         version = string(pkgversion(parentmodule(CLI))),
         add_version = true
@@ -17,64 +33,78 @@ function parse_commandline(args)
 
     @add_arg_table! s begin
         "--list", "-l"
-            help = "List available benchmarks and algorithms"
+            help = "List all registered benchmark tasks and algorithms, then exit."
             action = :store_true
         "--size", "-s"
-            help = "Global matrix size (N). If 0, auto-scales to ~40% VRAM."
+            help = "Matrix size N for the 'matmul' task. If 0, auto-scales using --fraction. Example: --size 8192"
             arg_type = Int
             default = 0
         "--sizes"
-            help = "Comma-separated list of sizes for scaling benchmark. If empty, auto-scales."
+            help = "Comma-separated matrix sizes for the 'scaling' task. Overrides auto-sizing for both CPU and GPU. Example: --sizes 1024,4096,16384,32768"
             arg_type = String
             default = ""
         "--algorithm", "-a"
-            help = "Algorithm to use for scaling benchmark."
+            help = "BLAS algorithm for the 'scaling' task. Default: matmul. Use --list to see available algorithms."
             arg_type = String
             default = "matmul"
         "--devices"
-            help = "Comma-separated GPU IDs to use (e.g. '0,1'). 'all' uses all functional GPUs."
+            help = "Comma-separated GPU device IDs to benchmark. 'all' uses every functional GPU. Example: --devices 0,2"
             arg_type = String
             default = "all"
         "--cpu-threads"
-            help = "Number of CPU threads to use for CPU benchmarks."
+            help = "Number of BLAS threads for CPU benchmarks. Default: all available ($(Sys.CPU_THREADS)). Example: --cpu-threads 8"
             arg_type = Int
             default = Sys.CPU_THREADS
-        "--parallel", "-p"
-            help = "Run scaling benchmark in parallel across specified GPUs."
+        "--no-cpu"
+            help = "Skip CPU benchmark in the 'scaling' task. Useful for GPU-only characterization."
             action = :store_true
-        "--plugin", "-P"
-            help = "Module name or file path to load as a plugin."
-            arg_type = String
-        "--duration", "-d"
-            help = "Stress test duration (seconds)."
-            arg_type = Int
-            default = 30
-        "--fraction", "-f"
-            help = "Target VRAM usage fraction for auto-sizing."
+        "--no-gpu"
+            help = "Skip GPU benchmark in the 'scaling' task. Useful for CPU-only baseline."
+            action = :store_true
+        "--cpu-fraction"
+            help = "Fraction of free system RAM used to auto-size the CPU scaling range [0.0–1.0]. Default: 0.4"
             arg_type = Float64
             default = 0.4
+        "--gpu-fraction"
+            help = "Fraction of free GPU VRAM used to auto-size the GPU scaling range [0.0–1.0]. Default: 0.6"
+            arg_type = Float64
+            default = 0.6
+        "--fraction", "-f"
+            help = "Memory fraction for single 'matmul' auto-sizing (see --size). For scaling use --cpu-fraction / --gpu-fraction. [0.0–1.0]"
+            arg_type = Float64
+            default = 0.4
+        "--parallel", "-p"
+            help = "Run the 'scaling' GPU loop in parallel across all selected devices."
+            action = :store_true
+        "--plugin", "-P"
+            help = "Module name or file path to load as a benchmark plugin."
+            arg_type = String
+        "--duration", "-d"
+            help = "Stress test duration in seconds."
+            arg_type = Int
+            default = 30
         "--output-dir", "-o"
-            help = "Root directory for results."
+            help = "Root directory for results. A timestamped sub-directory is created automatically. Default: results/"
             arg_type = String
             default = "results"
         "--verbose", "-v"
-            help = "Enable debug logging."
+            help = "Enable debug-level logging."
             action = :store_true
         "--quiet", "-q"
-            help = "Suppress terminal dashboard."
+            help = "Suppress the terminal dashboard at the end of the run."
             action = :store_true
         "--plot-format"
-            help = "Format for saved plots (png, pdf, svg)."
+            help = "File format for saved plots when GPUInspector extension is loaded (png, pdf, svg). Default: png"
             arg_type = String
             default = "png"
         "--show-latest"
-            help = "Show the dashboard for the latest benchmark run and exit."
+            help = "Show the dashboard for the most recent benchmark run in --output-dir, then exit."
             action = :store_true
         "--show", "-S"
-            help = "Show the dashboard for a specific run path and exit."
+            help = "Show the dashboard for a specific run directory, then exit. Example: --show results/mynode/2026-04-12_120000"
             arg_type = String
         "benchmarks"
-            help = "Tasks: sysinfo, matmul, tensorcore, scaling, gpuinspector, all. Default: sysinfo."
+            help = "One or more tasks to run (see Tasks above). Default: sysinfo."
             nargs = '*'
             default = ["sysinfo"]
     end

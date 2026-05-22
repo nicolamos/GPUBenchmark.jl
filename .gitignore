@@ -30,3 +30,4 @@ docs/Manifest.toml
 LocalPreferences.toml
 JuliaLocalPreferences.toml
 coverage.info
+merge_requests/

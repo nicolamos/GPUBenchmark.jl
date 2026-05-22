@@ -18,3 +18,9 @@ Modules = [GPUBenchmark.Engine]
 ```@autodocs
 Modules = [GPUBenchmark.Reporting]
 ```
+
+## Visuals
+
+```@docs
+GPUBenchmark.Visuals.render_lineplot
+```

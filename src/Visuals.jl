@@ -140,13 +140,7 @@ function _render_scaling_plots(dat)
     end
 end
 
-"""
-    _render_roofline(ns, ts; title, peak_tflops, peak_bw_gb, bw_source)
-
-Plot a roofline model for the given (ns, ts) measurements.
-`bw_source` is a label shown in the ridge annotation; pass "default" to
-emit a warning that the bandwidth estimate may be inaccurate.
-"""
+# Plot a roofline model for the given (ns, ts) measurements.
 function _render_roofline(ns, ts; title="Roofline", peak_tflops=10.0, peak_bw_gb=500.0, bw_source="default")
     # Arithmetic intensity for FP32 matmul NxN: 2N³ FLOPs / 12N² bytes = N/6 FLOP/byte
     isempty(ns) && return

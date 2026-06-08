@@ -237,17 +237,27 @@ function _render_speedup_plot(dat)
     !isnothing(xover) && @printf("  GPU > CPU from N=%d onwards\n", shared_ns[xover])
 end
 
+"""
+    to_vector(x) -> Vector{Float64}
+
+Normalize a JSON-parsed numeric value to a flat `Vector{Float64}`.
+Handles scalars, 0-dimensional arrays, and any `AbstractArray`.
+"""
+to_vector(x::Number)::Vector{Float64}         = [Float64(x)]
+to_vector(x::AbstractArray)::Vector{Float64}  = vec(Float64.(x))
+
 function _render_latency_histogram(bench_data)
     if !haskey(bench_data, "matmul") || haskey(bench_data["matmul"], "error")
         return
     end
-    
+
     m = bench_data["matmul"]
     if !haskey(m, "samples")
         return
     end
-    
-    samples_ms = m["samples"] .* 1000.0
+
+    samples_ms = to_vector(m["samples"]) .* 1000.0
+    isempty(samples_ms) && return
     println("\n  Latency Distribution (MatMul FP32):")
     p = histogram(samples_ms, nbins=15, title="Kernel Latency", xlabel="Time (ms)", color=:yellow, width=70, height=10)
     show(stdout, MIME"text/plain"(), p)

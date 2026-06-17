@@ -259,6 +259,11 @@ function _render_latency_histogram(bench_data)
     samples_ms = to_vector(m["samples"]) .* 1000.0
     isempty(samples_ms) && return
     println("\n  Latency Distribution (MatMul FP32):")
+    if length(samples_ms) < 2
+        # UnicodePlots.histogram errors on a single-point sample (degenerate bin edges)
+        @warn "Single sample, skipping histogram" latency_ms=samples_ms[1]
+        return
+    end
     p = histogram(samples_ms, nbins=15, title="Kernel Latency", xlabel="Time (ms)", color=:yellow, width=70, height=10)
     show(stdout, MIME"text/plain"(), p)
     println()

@@ -1,0 +1,17 @@
+name: TagBot
+on:
+  issue_comment:
+    types:
+      - created
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  TagBot:
+    if: github.event_name == 'workflow_dispatch' || github.event.comment.body == '@JuliaTagBot release'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: JuliaRegistrator/TagBot@v1
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          ssh: ${{ secrets.DOCUMENTER_KEY }}

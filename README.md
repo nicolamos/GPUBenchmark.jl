@@ -1,49 +1,200 @@
-# GPUBenchmark.jl
+# GPUBenchmark.jl 🚀
 
-A standalone Julia GPU benchmarking suite designed for HPC node validation and burn-in.
+[![Build Status](https://github.com/nicolamos/GPUBenchmark.jl/actions/workflows/CI.yml/badge.svg)](https://github.com/nicolamos/GPUBenchmark.jl/actions/workflows/CI.yml)
+[![Docs](https://img.shields.io/badge/docs-latest-blue.svg)](https://nicolamos.github.io/GPUBenchmark.jl/dev/)
+[![Code Coverage](https://codecov.io/gh/nicolamos/GPUBenchmark.jl/branch/main/graph/badge.svg)](https://codecov.io/gh/nicolamos/GPUBenchmark.jl)
 
-## 🚀 Key Features
+A standalone Julia GPU benchmarking suite designed for **HPC node validation and burn-in**.
 
-- **Smart Auto-Sizing**: Automatically calculates matrix sizes based on available VRAM to ensure hardware saturation without OOM errors.
-- **Deep Inspection**: Leverages `GPUInspector.jl` for high-fidelity performance metrics.
-- **Visual Dashboard**: Automatically generates a tiled PNG dashboard showing:
-  - GPU Utilization (Compute & Memory)
-  - Power Usage (W)
-  - Temperature (°C)
-- **HPC Ready**: Designed to run in isolated environments with structured, timestamped output (JSON, HDF5, TXT).
+This tool verifies that a freshly provisioned GPU node is stable under load and measures its compute performance. It uses a **plugin-based architecture** via Julia extensions to keep the core lightweight while offering powerful telemetry and stress-testing capabilities.
 
-## 🛠 Installation
+---
 
+## ⚠️ Prerequisites & Caveats
+
+- **Hardware:** Optimized for **NVIDIA GPUs** (Compute Capability 6.0+).
+- **OS:** Linux (x86_64) is the primary target for HPC validation.
+- **CUDA:** The package includes `CUDA.jl`. For production validation, benchmarking against the **local system toolkit** is recommended (see HPC Considerations).
+
+---
+
+## 💿 Step 1: Installation & Setup
+
+Choose the workflow that fits your needs. We recommend the **Shared Environment** for most HPC users.
+
+### Path A: Shared Named Environment (Recommended)
+Keeps your global environment clean while providing a dedicated test suite.
+
+1.  **Open Julia** and enter **Pkg mode** by pressing `]`.
+2.  **Setup the environment:**
+    ```julia
+    pkg> activate --shared gpu-test
+    pkg> add https://github.com/nicolamos/GPUBenchmark.jl
+    pkg> add GPUInspector CairoMakie
+    ```
+    *(Adding `GPUInspector` and `CairoMakie` enables the dashboard and burn-in features.)*
+3.  **Run the suite:**
+    ```bash
+    julia --project=@gpu-test -m GPUBenchmark all
+    ```
+
+---
+
+### Path B: Global CLI Tool (App Mode)
+Installs a standalone `gpu_benchmark` command to your PATH.
+
+1.  **Install the App:**
+    ```julia
+    pkg> app add https://github.com/nicolamos/GPUBenchmark.jl
+    ```
+2.  **Enable Plugins (Tweak the Private Env):**
+    Apps have isolated environments. To enable dashboards, you must add the plugins to its private project:
+    ```bash
+    julia --project=$HOME/.julia/apps/GPUBenchmark -e 'using Pkg; Pkg.add(["GPUInspector", "CairoMakie"])'
+    ```
+3.  **Run the tool:**
+    ```bash
+    gpu_benchmark all
+    ```
+
+---
+
+> [!IMPORTANT]
+> **Standalone Environment (`--project=.`)**
+> Running directly from a cloned directory using `julia --project=.` is **not recommended** for production health checks. This is because the extension dependencies (`GPUInspector`, `CairoMakie`) are "weak" and won't be triggered unless they are explicitly added to the environment. Use the `@gpu-test` method instead to keep your development environment clean while having a fully-featured test environment.
+
+---
+
+## 📊 Usage Guide
+
+### Common Commands
 ```bash
-git clone https://github.com/nicolamos/GPUBenchmark.jl.git
-cd GPUBenchmark.jl
-julia --project -e 'using Pkg; Pkg.instantiate()'
+# Run everything (System Audit + MatMul + Parallel Burn-in)
+julia --project=@gpu-test -m GPUBenchmark all
+
+# Stress test for a specific duration (seconds)
+julia --project=@gpu-test -m GPUBenchmark --duration 120 gpuinspector
+
+# Headless mode (Generates all files but skips terminal dashboard)
+julia --project=@gpu-test -m GPUBenchmark --quiet all
+
+# Re-view the results of the latest run
+julia --project=@gpu-test -m GPUBenchmark --show-latest
 ```
 
-## 📊 Usage
+### Available Tasks
 
-### Run all benchmarks
+| Task | Level | Description |
+| :--- | :--- | :--- |
+| `sysinfo` | **Core** | Hardware audit: GPU model, VRAM, PCI IDs. |
+| `matmul` | **Core** | Raw compute: FP32 TFLOPS via matrix operations. |
+| `scaling` | **Core** | **Multi-GPU Scaling:** Strong/Weak scaling analysis & parallel probing. |
+| `gpuinspector`| **Ext** | **Burn-in:** Parallel stress test with telemetry (Requires Plugins). |
+| `all` | - | Runs all available tasks sequentially. |
+
+---
+
+## 🚀 Advanced Benchmarking
+
+The suite supports modular scaling benchmarks and custom algorithm plugins.
+
+### 📊 Scaling Benchmark
+Measure performance across different problem sizes and multiple GPUs simultaneously.
+
 ```bash
-julia --project -m GPUBenchmark all
+# Run default scaling benchmark (auto-sizes based on VRAM)
+julia --project=@gpu-test -m GPUBenchmark scaling
+
+# Benchmark specific GPUs in parallel with custom threads
+julia --project=@gpu-test -m GPUBenchmark scaling --devices 0,1 --parallel --cpu-threads 8
 ```
 
-### Run specific deep inspection
-```bash
-julia --project -m GPUBenchmark gpuinspector
+**Key Flags:**
+- `--sizes`: Comma-separated list of matrix sizes (e.g., `2048,4096`).
+- `--devices`: GPU IDs to use (`0,1,2`) or `all`.
+- `--parallel`: Enable parallel probing (evaluates system-wide bottlenecks).
+- `--algorithm`: Select a registered algorithm (default: `matmul`).
+- `--plot-format`: Output format for saved plots (`png`, `pdf`, `svg`). Default: `png`.
+
+### 🧩 Custom Algorithms (Plugins)
+The suite uses a **Hybrid Plugin Strategy**:
+1.  **Dependencies** are managed by your Julia environment (`@gpu-test`).
+2.  **Discovery** is handled by the CLI by scanning a local `plugins/` folder.
+
+**1. Create a plugin module (`plugins/MyCustom.jl`):**
+```julia
+module MyCustom
+
+using GPUBenchmark
+using Statistics # Example dependency
+
+struct MyAlg <: GPUBenchmark.AbstractAlgorithm end
+
+# CPU implementation (uses BenchmarkTools internally)
+function GPUBenchmark.run_cpu(::MyAlg, n, threads)
+    # ... logic ...
+    return Dict("time_s" => t, "tflops" => ops/t/1e12, "threads" => threads)
+end
+
+# GPU implementation
+function GPUBenchmark.run_gpu(::MyAlg, n)
+    # ... logic ...
+    return Dict("time_s" => t, "tflops" => ops/t/1e12)
+end
+
+# Plugins register themselves when loaded
+function __init__()
+    GPUBenchmark.register_algorithm("my_custom", MyAlg())
+end
+
+end # module
 ```
 
-### Manual Size Override
+**2. Run the benchmark:**
+The CLI automatically detects any `.jl` files in the `plugins/` directory and loads them as modules.
 ```bash
-julia --project -m GPUBenchmark --size 16384 gpuinspector
+julia --project=@gpu-test -m GPUBenchmark scaling --algorithm my_custom
 ```
 
-## 📂 Output Structure
+---
 
-Results are saved by default in `results/<hostname>/<timestamp>/`:
-- `summary.txt`: Human-readable health certificate.
-- `metrics.json`: High-level aggregate scores (suitable for Ansible/ARA).
-- `telemetry.h5`: Raw time-series telemetry data.
-- `dashboard.png`: Visual overview of the run.
+## 🏗️ HPC Deployment Considerations
+
+### Threading on Multi-core Nodes
+On nodes with high core counts (100+), `julia --threads auto` may cause excessive overhead. **Always prefer an explicit thread count** (e.g., `--threads 8`).
+```bash
+julia --project=@gpu-test --threads 8 -m GPUBenchmark all
+```
+
+### Julia Depot & Shared Filesystems
+By default, packages are installed in `~/.julia`. If you are limited by disk quotas or want to use a shared installation, use `JULIA_DEPOT_PATH`:
+```bash
+# Example: Use a shared HPC software stack but keep your home for private settings
+export JULIA_DEPOT_PATH="/apps/software/julia/depot:$HOME/.julia"
+```
+*Note: The first path in the list must be writable to install new packages.*
+
+### Using System CUDA
+To benchmark against the specific CUDA version installed on your host OS (instead of the artifacts downloaded by Julia):
+```julia
+using CUDA
+# Must be set before running benchmarks
+CUDA.set_runtime_version!(v"12.4", local_toolkit=true)
+```
+
+---
+
+## 📂 Understanding Results
+
+Results are saved to `results/<hostname>/<timestamp>/`.
+
+- **`summary.txt`**: Human-readable report of specs and scores.
+- **`metrics.json`**: Structured data for automation/CI.
+- **`dashboard.<format>`**: (Ext) Visual chart of Power, Temp, and Utilization.
+- **`scaling_plot.<format>`**: (Ext) Professional chart of performance scaling.
+- **`telemetry.h5`**: (Ext) Raw sensor data from the burn-in.
+
+---
 
 ## ⚖️ License
 MIT / Apache 2.0

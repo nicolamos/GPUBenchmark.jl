@@ -1,6 +1,6 @@
 module SysInfo
 
-using ..Core: register_benchmark
+using ..Core: register_benchmark, available_cpu_threads
 using CUDA
 using Printf: @sprintf
 
@@ -15,7 +15,7 @@ function run_sysinfo(args)
         results["cpu_model"] = cpus[1].model
     end
     results["cpu_arch"] = string(Sys.CPU_NAME)
-    results["cpu_threads"] = Sys.CPU_THREADS
+    results["cpu_threads"] = available_cpu_threads()
     results["ram_total"] = Base.format_bytes(Int(Sys.total_memory()))
     results["ram_free"] = Base.format_bytes(Int(Sys.free_memory()))
 

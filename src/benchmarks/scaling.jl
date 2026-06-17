@@ -1,6 +1,6 @@
 module Scaling
 
-using ..Core: register_benchmark, ALGORITHM_REGISTRY, run_cpu, run_gpu, AbstractHardware, CUDAHardware, get_devices, set_device!
+using ..Core: register_benchmark, ALGORITHM_REGISTRY, run_cpu, run_gpu, AbstractHardware, CUDAHardware, get_devices, set_device!, available_cpu_threads
 using ..Engine: calculate_scaling_sizes, calculate_scaling_sizes_cpu, calculate_scaling_sizes_gpu
 
 function run_scaling(args; hardware::AbstractHardware = CUDAHardware())
@@ -44,7 +44,7 @@ function run_scaling(args; hardware::AbstractHardware = CUDAHardware())
         intersect(requested, all_dev_ids)
     end
 
-    cpu_threads = get(args, "cpu_threads", Sys.CPU_THREADS)
+    cpu_threads = get(args, "cpu_threads", available_cpu_threads())
     @info "Starting Scaling Benchmark" alg=alg_name cpu_sizes=cpu_sizes gpu_sizes=all_gpu_sizes comparison_sizes=comparison_sizes devices=dev_ids cpu_threads=cpu_threads
 
     results = Dict{String, Any}()

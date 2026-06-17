@@ -3,7 +3,7 @@ module CLI
 using ArgParse
 using Printf
 using PrettyTables
-using ..Core
+using ..Core: REGISTRY, ALGORITHM_REGISTRY, available_cpu_threads
 
 export parse_commandline, list_benchmarks
 
@@ -52,9 +52,9 @@ function parse_commandline(args)
             arg_type = String
             default = "all"
         "--cpu-threads"
-            help = "Number of BLAS threads for CPU benchmarks. Default: CPUs schedulable by this process ($(Core.available_cpu_threads())). Example: --cpu-threads 8"
+            help = "Number of BLAS threads for CPU benchmarks. Default: CPUs schedulable by this process ($(available_cpu_threads())). Example: --cpu-threads 8"
             arg_type = Int
-            default = Core.available_cpu_threads()
+            default = available_cpu_threads()
         "--no-cpu"
             help = "Skip CPU benchmark in the 'scaling' task. Useful for GPU-only characterization."
             action = :store_true
